@@ -67,7 +67,7 @@ start_process (void *file_name_)
   ASSERT (argc != 0);
 
   /* argument parsing */
-  char* argv[argc + 1];
+  char* argv[argc + 1];q
   char* p = file_name;
   for (int i = 0; i < (int) argc; i++)
     argv[i] = strtok_r (p, dels, &p);
