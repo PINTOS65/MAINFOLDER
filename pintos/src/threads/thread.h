@@ -103,7 +103,9 @@ struct thread
 
     /* addition */
     int exit_status;			/* will be passed to exit () */
-    struct semaphore* parent;		/* points sema of the parent thread */
+    struct semaphore* parent;		/* points to sema of the parent thread */
+    struct list childlist;		/* points to the child thread */
+    struct list_elem childelem;		/* list element for childlist */
   };
 
 /* If false (default), use round-robin scheduler.

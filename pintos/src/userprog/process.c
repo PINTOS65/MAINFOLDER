@@ -42,10 +42,10 @@ process_execute (const char *file_name)
   char* fn_copy2 = palloc_get_page (0);
   if (fn_copy2 == NULL)
     return TID_ERROR;
-  strlcpy (fn_copy2, file_name, PGSIZE);
   char dels[2] = {' ', '\0'};
-  char* s = fn_copy2;
-  fn_copy2 = strtok_r (s, dels, &s);
+  size_t i = strspn (fn_copy, dels);
+  size_t j = strcspn (fn_copy + i, dels);
+  memcpy (fn_copy2, fn_copy + i, j);
 
   /* Create a new thread to execute FILE_NAME. */
   tid = thread_create (fn_copy2, PRI_DEFAULT, start_process, fn_copy);
@@ -115,9 +115,25 @@ start_process (void *file_name_)
 int
 process_wait (tid_t child_tid) 
 {
+  struct thread* cur = thread_current ();
+  struct thread* child;
+
   if (child_tid == -1) return -1;
-  struct thread* child = thread_from_tid (child_tid);
-  if (child == NULL) return -1;
+  if (list_empty (&cur->childlist)) return -1;
+
+  bool valid = false;
+  for (struct list_elem* e = list_front (&cur->childlist); e != list_end (&cur->childlist); e = list_next (e))
+  {
+    child = list_entry (e, struct thread, childelem);
+    if (child->tid == child_tid)
+    {
+      valid = true;
+      break;
+    }
+  }
+  if (!valid) return -1;
+
+  if (child->parent != NULL) return -1;
   if (child->status != THREAD_DYING)
   {
     //printf ("child %s %d\n", child->name, child->status);
