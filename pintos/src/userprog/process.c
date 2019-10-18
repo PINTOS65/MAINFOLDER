@@ -17,6 +17,7 @@
 #include "threads/palloc.h"
 #include "threads/thread.h"
 #include "threads/vaddr.h"
+#include "threads/synch.h" //addition
 
 static thread_func start_process NO_RETURN;
 static bool load (size_t argc, char** argv, void (**eip) (void), void **esp);//original argument: const char *cmdline
@@ -38,8 +39,16 @@ process_execute (const char *file_name)
     return TID_ERROR;
   strlcpy (fn_copy, file_name, PGSIZE);
 
+  char* fn_copy2 = palloc_get_page (0);
+  if (fn_copy2 == NULL)
+    return TID_ERROR;
+  strlcpy (fn_copy2, file_name, PGSIZE);
+  char dels[2] = {' ', '\0'};
+  char* s = fn_copy2;
+  fn_copy2 = strtok_r (s, dels, &s);
+
   /* Create a new thread to execute FILE_NAME. */
-  tid = thread_create (file_name, PRI_DEFAULT, start_process, fn_copy);
+  tid = thread_create (fn_copy2, PRI_DEFAULT, start_process, fn_copy);
   if (tid == TID_ERROR)
     palloc_free_page (fn_copy); 
   return tid;
@@ -104,10 +113,20 @@ start_process (void *file_name_)
    This function will be implemented in problem 2-2.  For now, it
    does nothing. */
 int
-process_wait (tid_t child_tid UNUSED) 
+process_wait (tid_t child_tid) 
 {
-  while (1) {}
-  return -1;
+  if (child_tid == -1) return -1;
+  struct thread* child = thread_from_tid (child_tid);
+  if (child == NULL) return -1;
+  if (child->status != THREAD_DYING)
+  {
+    //printf ("child %s %d\n", child->name, child->status);
+    struct semaphore sema;
+    sema_init (&sema, 0);
+    child->parent = &sema;
+    sema_down (&sema);
+  }
+  return child->exit_status;
 }
 
 /* Free the current process's resources. */
