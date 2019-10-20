@@ -9,6 +9,7 @@
 #include "filesys/file.h" //addition
 #include "filesys/filesys.h" //addition
 #include "devices/input.h" //addition
+#include "threads/vaddr.h" //addition
 
 static void syscall_handler (struct intr_frame *);
 
@@ -24,6 +25,8 @@ int write (int, const void*, unsigned);
 void seek (int, unsigned);
 unsigned tell (int);
 void close (int);
+
+void* valid (void*);
 
 void
 syscall_init (void) 
@@ -43,7 +46,7 @@ syscall_handler (struct intr_frame *f)
   unsigned unsigned_;
   void* buf_;
 
-  int sysnum = *(int*)(f->esp);
+  int sysnum = *(int*) valid (f->esp);
 
   switch (sysnum)
   {
@@ -51,58 +54,58 @@ syscall_handler (struct intr_frame *f)
       shutdown_power_off ();
       break;
     case SYS_EXIT:
-      int_ = *(int*)(f->esp + 4);
+      int_ = *(int*) valid (f->esp + 4);
       exit (int_);
       f->eax = (uint32_t) int_;
       break;
     case SYS_EXEC:
-      str_ = *(char**)(f->esp + 4);
+      str_ = *(char**) valid (f->esp + 4);
       f->eax = (uint32_t) exec (str_);
       break;
     case SYS_WAIT:
-      pid_ = *(tid_t*)(f->esp + 4);
+      pid_ = *(tid_t*) valid (f->esp + 4);
       f->eax = (uint32_t) wait (pid_);
       break;
     case SYS_CREATE:
-      unsigned_ = *(unsigned*)(f->esp + 8);
+      unsigned_ = *(unsigned*) valid (f->esp + 8);
       str_ = *(char**)(f->esp + 4);
       f->eax = (uint32_t) create (str_, unsigned_);
       break;
     case SYS_REMOVE:
-      str_ = *(char**)(f->esp + 4);
+      str_ = *(char**) valid (f->esp + 4);
       f->eax = (uint32_t) remove (str_);
       break;
     case SYS_OPEN:
-      str_ = *(char**)(f->esp + 4);
+      str_ = *(char**) valid (f->esp + 4);
       f->eax = (uint32_t) open (str_);
       break;
     case SYS_FILESIZE:
-      int_ = *(int*)(f->esp + 4);
+      int_ = *(int*) valid (f->esp + 4);
       f->eax = (uint32_t) filesize (int_);
       break;
     case SYS_READ:
-      unsigned_ = *(unsigned*)(f->esp + 12);
+      unsigned_ = *(unsigned*) valid (f->esp + 12);
       buf_ = *(void**)(f->esp + 8);
       int_ = *(int*)(f->esp + 4);
       f->eax = (uint32_t) read (int_, buf_, unsigned_);
       break;
     case SYS_WRITE:
-      unsigned_ = *(unsigned*)(f->esp + 12);
+      unsigned_ = *(unsigned*) valid (f->esp + 12);
       buf_ = *(void**)(f->esp + 8);
       int_ = *(int*)(f->esp + 4);
       f->eax = (uint32_t) write (int_, buf_, unsigned_);
       break;
     case SYS_SEEK:
-      unsigned_ = *(unsigned*)(f->esp + 8);
+      unsigned_ = *(unsigned*) valid (f->esp + 8);
       int_ = *(int*)(f->esp + 4);
       seek (int_, unsigned_);
       break;
     case SYS_TELL:
-      int_ = *(int*)(f->esp + 4);
+      int_ = *(int*) valid (f->esp + 4);
       f->eax = (uint32_t) tell (int_);
       break;
     case SYS_CLOSE:
-      int_ = *(int*)(f->esp + 4);
+      int_ = *(int*) valid (f->esp + 4);
       close (int_);
       break;
   }
@@ -192,4 +195,11 @@ void
 close (int fd)
 {
   file_close ((struct file*) fd);
+}
+
+void*
+valid (void* addr)
+{
+  if (is_user_vaddr (addr)) return addr;
+  exit (-1);
 }

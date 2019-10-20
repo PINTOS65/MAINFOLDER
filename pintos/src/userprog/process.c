@@ -46,6 +46,7 @@ process_execute (const char *file_name)
   size_t i = strspn (fn_copy, dels);
   size_t j = strcspn (fn_copy + i, dels);
   memcpy (fn_copy2, fn_copy + i, j);
+  fn_copy2[j] = '\0';
 
   /* Create a new thread to execute FILE_NAME. */
   tid = thread_create (fn_copy2, PRI_DEFAULT, start_process, fn_copy);
@@ -64,6 +65,7 @@ start_process (void *file_name_)
 {
   char *file_name = palloc_get_page (0);
   memcpy (file_name, file_name_, strlen (file_name_));
+  file_name[strlen (file_name_)] = '\0';
   struct intr_frame if_;
   bool success;
 
