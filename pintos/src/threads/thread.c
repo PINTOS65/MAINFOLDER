@@ -186,6 +186,10 @@ thread_create (const char *name, int priority,
   tid = t->tid = allocate_tid ();
   list_push_back (&thread_current ()->childlist, &t->childelem); // addition
 
+  /* (addition) parent-child relation setting */
+  t->parent = thread_current ();
+  list_push_back (&t->parent->child_list, &t->childelem);
+
   /* Stack frame for kernel_thread(). */
   kf = alloc_frame (t, sizeof *kf);
   kf->eip = NULL;
@@ -287,7 +291,10 @@ thread_exit (void)
 
 #ifdef USERPROG
   process_exit ();
-#endif
+  printf ("%s: exit(%d)\n", thread_current ()->name, thread_current ()->exit_status);
+  sema_up (&thread_current ()->wait_sema);
+  sema_down (&thread_current ()->exit_sema);
+# endif
 
   /* Remove thread from all threads list, set our status to dying,
      and schedule another process.  That process will destroy us
@@ -469,9 +476,13 @@ init_thread (struct thread *t, const char *name, int priority)
   t->stack = (uint8_t *) t + PGSIZE;
   t->priority = priority;
   t->magic = THREAD_MAGIC;
-  t->exit_status = -1; // addition
-  t->parent = NULL;
-  list_init (&t->childlist); //addition
+  t->exit_status = -1; //addition
+  t->exec_status = true; //addition
+  t->parent = NULL; //addition
+  list_init (&t->child_list); //addition
+  sema_init (&t->exec_sema, 0); //addition
+  sema_init (&t->wait_sema, 0); //addition
+  sema_init (&t->exit_sema, 0); //addition
 
   old_level = intr_disable ();
   list_push_back (&all_list, &t->allelem);
