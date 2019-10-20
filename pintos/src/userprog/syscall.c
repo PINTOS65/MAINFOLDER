@@ -143,7 +143,6 @@ wait (tid_t pid)
 }
 
 bool
-create (const char *file UNUSED, unsigned initial_size UNUSED)
 {
   if (file == NULL)
     return false;
@@ -151,22 +150,6 @@ create (const char *file UNUSED, unsigned initial_size UNUSED)
 }
 
 bool
-remove (const char *file UNUSED)
-{
-  return false;
-}
-
-int
-open (const char *file UNUSED)
-{
-  return 0;
-}
-
-int
-filesize (int fd UNUSED)
-{
-  return 0;
-}
 
 int
 read (int fd UNUSED, void *buffer UNUSED, unsigned size UNUSED)
@@ -197,21 +180,6 @@ write (int fd, const void *buffer, unsigned size) //write system call
   return 0;
 }
 
-void
-seek (int fd UNUSED, unsigned position UNUSED)
-{
-}
-
-unsigned
-tell (int fd UNUSED)
-{
-  return (unsigned) 0;
-}
-
-void
-close (int fd UNUSED)
-{
-}
 
 static int
 get_user (const uint8_t *uaddr)
