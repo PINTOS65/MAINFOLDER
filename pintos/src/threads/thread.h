@@ -109,12 +109,6 @@ struct thread
 
     /* Owned by thread.c. */
     unsigned magic;                     /* Detects stack overflow. */
-
-    /* addition */
-    int exit_status;			/* will be passed to exit () */
-    struct semaphore* parent;		/* points to sema of the parent thread */
-    struct list childlist;		/* points to the child thread */
-    struct list_elem childelem;		/* list element for childlist */
   };
 
 /* If false (default), use round-robin scheduler.
@@ -152,8 +146,5 @@ int thread_get_nice (void);
 void thread_set_nice (int);
 int thread_get_recent_cpu (void);
 int thread_get_load_avg (void);
-
-/* addition */
-struct thread* thread_from_tid (tid_t);
 
 #endif /* threads/thread.h */
