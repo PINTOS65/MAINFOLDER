@@ -17,6 +17,7 @@
 #include "threads/palloc.h"
 #include "threads/thread.h"
 #include "threads/vaddr.h"
+#include "threads/synch.h" //addition
 
 static thread_func start_process NO_RETURN;
 static bool load (const char *cmdline, void (**eip) (void), void **esp);
@@ -151,10 +152,36 @@ q0
    This function will be implemented in problem 2-2.  For now, it
    does nothing. */
 int
-process_wait (tid_t child_tid UNUSED) 
+process_wait (tid_t child_tid) 
 {
-  while (1) {}
-  return -1;
+  struct thread* cur = thread_current ();
+  struct thread* child;
+
+  if (child_tid == -1) return -1;
+  if (list_empty (&cur->childlist)) return -1;
+
+  bool valid = false;
+  for (struct list_elem* e = list_front (&cur->childlist); e != list_end (&cur->childlist); e = list_next (e))
+  {
+    child = list_entry (e, struct thread, childelem);
+    if (child->tid == child_tid)
+    {
+      valid = true;
+      break;
+    }
+  }
+  if (!valid) return -1;
+
+  if (child->parent != NULL) return -1;
+  if (child->status != THREAD_DYING)
+  {
+    //printf ("child %s %d\n", child->name, child->status);
+    struct semaphore sema;
+    sema_init (&sema, 0);
+    child->parent = &sema;
+    sema_down (&sema);
+  }
+  return child->exit_status;
 }
 
 /* Free the current process's resources. */

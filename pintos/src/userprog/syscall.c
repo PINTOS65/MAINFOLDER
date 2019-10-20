@@ -8,6 +8,22 @@
 #include "threads/synch.h" //addition
 
 static void syscall_handler (struct intr_frame *);
+void halt (void);
+void exit (int);
+tid_t exec (const char*);
+int wait (tid_t);
+bool create (const char*, unsigned);
+bool remove (const char*);
+int open (const char*);
+int filesize (int);
+int read (int, void*, unsigned);
+int write (int, const void*, unsigned);
+void seek (int, unsigned);
+unsigned tell (int);
+void close (int);
+
+static int get_user (const uint8_t*);
+static bool put_user (uint8_t*, uint8_t);
 
 void exit (int);
 tid_t exec (const char*);
@@ -116,16 +132,5 @@ write (int fd, const void *buffer, unsigned size)
   }
   return 0;
 }
-
-
-
-
-
-
-
-
-
-
-
 
 

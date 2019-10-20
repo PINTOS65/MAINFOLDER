@@ -161,6 +161,7 @@ int
 process_wait (tid_t child_tid) 
 {
   struct thread* cur = thread_current ();
+
   struct thread* child = NULL;
 
   if (list_empty (&cur->child_list)) return -1;

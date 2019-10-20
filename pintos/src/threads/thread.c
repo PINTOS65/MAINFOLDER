@@ -27,6 +27,7 @@ static struct list ready_list;
 /* List of all processes.  Processes are added to this list
    when they are first scheduled and removed when they exit. */
 static struct list all_list;
+static struct list dead_list; //addition
 
 /* Idle thread. */
 static struct thread *idle_thread;
@@ -92,6 +93,7 @@ thread_init (void)
   lock_init (&tid_lock);
   list_init (&ready_list);
   list_init (&all_list);
+  list_init (&dead_list);
 
   /* Set up a thread structure for the running thread. */
   initial_thread = running_thread ();
@@ -182,6 +184,7 @@ thread_create (const char *name, int priority,
   /* Initialize thread. */
   init_thread (t, name, priority);
   tid = t->tid = allocate_tid ();
+  list_push_back (&thread_current ()->childlist, &t->childelem); // addition
 
   /* (addition) parent-child relation setting */
   t->parent = thread_current ();
@@ -298,6 +301,9 @@ thread_exit (void)
      when it calls thread_schedule_tail(). */
   intr_disable ();
   list_remove (&thread_current()->allelem);
+  list_push_back (&dead_list, &thread_current()->allelem);
+  sema_up (thread_current ()->parent); //addition for syscall
+  printf ("%s: exit(%d)\n", thread_current ()->name, thread_current ()->exit_status);
   thread_current ()->status = THREAD_DYING;
   schedule ();
   NOT_REACHED ();
@@ -592,6 +598,30 @@ allocate_tid (void)
 
   return tid;
 }
+
+/* Returns a thread from a tid */
+struct thread*
+thread_from_tid (tid_t tid)
+{
+  ASSERT (!list_empty (&all_list));
+  struct thread* thr;
+  struct list_elem* e;
+  for (e = list_front (&all_list); e != list_end (&all_list); e = list_next (e))
+  {
+    thr = list_entry (e, struct thread, allelem);
+    if (tid == thr->tid) return thr;
+  }
+  if (!list_empty (&dead_list))
+  {
+    for (e = list_front (&dead_list); e != list_end (&dead_list); e = list_next (e))
+    {
+      thr = list_entry (e, struct thread, allelem);
+      if (tid == thr->tid) return thr;
+    }
+  }
+  return NULL;
+}
+
 
 /* Offset of `stack' member within `struct thread'.
    Used by switch.S, which can't figure it out on its own. */
