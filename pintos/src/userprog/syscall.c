@@ -8,7 +8,6 @@
 #include "threads/synch.h" //addition
 #include "devices/input.h" //addition
 #include "filesys/filesys.h" //addition
-#include "filesys/file.h" //addition
 
 static void syscall_handler (struct intr_frame *);
 void halt (void);
@@ -144,7 +143,6 @@ wait (tid_t pid)
 }
 
 bool
-create (const char *file, unsigned initial_size)
 {
   if (file == NULL)
     return false;
@@ -152,26 +150,6 @@ create (const char *file, unsigned initial_size)
 }
 
 bool
-remove (const char *file)
-{
-  return filesys_remove(file);
-}
-
-int
-open (const char *file)
-{
-  unsigned fd;
-  fd = filesys_open(file);
-  if(fd == -1)
-    return -1;
-  //3upper goes
-}
-
-int
-filesize (int fd)
-{
-  return file_length(fd);
-}
 
 int
 read (int fd UNUSED, void *buffer UNUSED, unsigned size UNUSED)
@@ -202,23 +180,6 @@ write (int fd, const void *buffer, unsigned size) //write system call
   return 0;
 }
 
-void
-seek (int fd, unsigned position)
-{
-  file_seek(fd, position);
-}
-
-unsigned
-tell (int fd)
-{
-  return file_tell(fd);
-}
-
-void
-close (int fd)
-{
-  file_close(fd);
-}
 
 static int
 get_user (const uint8_t *uaddr)
