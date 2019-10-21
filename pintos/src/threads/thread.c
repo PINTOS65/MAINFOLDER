@@ -15,6 +15,8 @@
 #include "userprog/process.h"
 #endif
 
+int counter = 0; // counter for fd allocation
+
 /* Random value for struct thread's `magic' member.
    Used to detect stack overflow.  See the big comment at the top
    of thread.h for details. */
@@ -478,6 +480,13 @@ init_thread (struct thread *t, const char *name, int priority)
   sema_init (&t->wait_sema, 0); //addition
   sema_init (&t->exit_sema, 0); //addition
 
+  /* init file list */ 
+  for (int fd = 3; fd < 128 ; fd++)
+  {
+    t->file_list[fd] = NULL;
+  }
+  t->file_list_size = 3;
+    
   old_level = intr_disable ();
   list_push_back (&all_list, &t->allelem);
   intr_set_level (old_level);
@@ -596,3 +605,57 @@ allocate_tid (void)
 /* Offset of `stack' member within `struct thread'.
    Used by switch.S, which can't figure it out on its own. */
 uint32_t thread_stack_ofs = offsetof (struct thread, stack);
+
+/* (addition) psuh file to file_list */
+int
+thread_push_file (struct file* file)
+{
+  ASSERT (file != NULL);
+
+  struct file** file_list = thread_current() -> file_list;
+  int file_list_size = thread_current() -> file_list_size;
+
+  if (file_list_size >= 128)
+    return -1;
+
+  int i;
+/*
+  for (i = 3; i < file_list_size; i++)
+  {
+    if (file_list[i] == NULL)
+    {
+      file_list[i] = file;
+      return i;
+    }
+  }
+  file_list[file_list_size] = file;
+  return file_list_size++;
+*/
+  for (i = 0; file_list[3 + (counter + i) % 125] != NULL; i++);
+  file_list[3 + (counter + i) % 125] = file;
+  return 3 + (counter++ + i) % 125;
+}
+
+struct file*
+thread_remove_file (int fd)
+{
+  ASSERT (fd > 2 && fd < 128);
+
+  struct file** file_list = thread_current() -> file_list;
+  
+  struct file* file = file_list[fd];
+  if (file != NULL) thread_current ()->file_list_size--;
+  file_list[fd] = NULL;
+
+  return file;
+}
+
+struct file*
+thread_get_file (int fd)
+{
+  ASSERT (fd > 2 && fd < 128);
+
+  struct file** file_list = thread_current() -> file_list;
+  
+  return file_list[fd];
+}
