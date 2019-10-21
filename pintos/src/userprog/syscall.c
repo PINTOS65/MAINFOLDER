@@ -10,6 +10,7 @@
 #include "filesys/filesys.h" //addition
 #include "devices/input.h" //addition
 #include "threads/vaddr.h" //addition
+#include <string.h> //addition
 
 static void syscall_handler (struct intr_frame *);
 
@@ -59,7 +60,7 @@ syscall_handler (struct intr_frame *f)
       f->eax = (uint32_t) int_;
       break;
     case SYS_EXEC:
-      str_ = *(char**) valid (f->esp + 4);
+      str_ = valid (*(char**) valid (f->esp + 4));
       f->eax = (uint32_t) exec (str_);
       break;
     case SYS_WAIT:
@@ -68,15 +69,15 @@ syscall_handler (struct intr_frame *f)
       break;
     case SYS_CREATE:
       unsigned_ = *(unsigned*) valid (f->esp + 8);
-      str_ = *(char**)(f->esp + 4);
+      str_ = valid (*(char**)(f->esp + 4));
       f->eax = (uint32_t) create (str_, unsigned_);
       break;
     case SYS_REMOVE:
-      str_ = *(char**) valid (f->esp + 4);
+      str_ = valid (*(char**) valid (f->esp + 4));
       f->eax = (uint32_t) remove (str_);
       break;
     case SYS_OPEN:
-      str_ = *(char**) valid (f->esp + 4);
+      str_ = valid (*(char**) valid (f->esp + 4));
       f->eax = (uint32_t) open (str_);
       break;
     case SYS_FILESIZE:
@@ -85,13 +86,13 @@ syscall_handler (struct intr_frame *f)
       break;
     case SYS_READ:
       unsigned_ = *(unsigned*) valid (f->esp + 12);
-      buf_ = *(void**)(f->esp + 8);
+      buf_ = valid (*(void**)(f->esp + 8));
       int_ = *(int*)(f->esp + 4);
       f->eax = (uint32_t) read (int_, buf_, unsigned_);
       break;
     case SYS_WRITE:
       unsigned_ = *(unsigned*) valid (f->esp + 12);
-      buf_ = *(void**)(f->esp + 8);
+      buf_ = valid (*(void**)(f->esp + 8));
       int_ = *(int*)(f->esp + 4);
       f->eax = (uint32_t) write (int_, buf_, unsigned_);
       break;
@@ -135,6 +136,7 @@ wait (tid_t pid)
 bool
 create (const char* file, unsigned initial_size)
 {
+  if (file == NULL) thread_exit ();
   return filesys_create (file, initial_size);
 }
 
@@ -147,13 +149,22 @@ remove (const char* file)
 int
 open (const char* file)
 {
-  return (int) filesys_open (file);
+  if (file == NULL)
+    return -1;
+  struct file* fileptr = filesys_open(file);
+  if (fileptr == NULL)
+    return -1;
+  if (strcmp (thread_name (), file) == 0) file_deny_write (fileptr);
+  return thread_push_file (fileptr);
 }
 
 int
 filesize (int fd)
 {
-  return file_length ((struct file*) fd);
+  if (fd < 3 || fd > 128)
+    thread_exit ();
+  struct file* file = thread_get_file (fd);
+  return file_length (file);
 }
 
 int
@@ -165,7 +176,10 @@ read (int fd, void* buffer, unsigned size)
       input_getc();
     return size;
   }
-  return file_read ((struct file*) fd, buffer, (off_t) size);
+  else if (fd < 0 || fd == 1 || fd == 2 || fd > 128)
+    thread_exit ();
+  struct file* file = thread_get_file (fd);
+  return file_read (file, buffer, (off_t) size);
 }
 
 int
@@ -176,25 +190,37 @@ write (int fd, const void *buffer, unsigned size)
     putbuf (buffer, size);
     return size;
   }
-  return file_write ((struct file*) fd, buffer, (off_t) size);
+  else if (fd < 1 || fd == 2 || fd > 128)
+    thread_exit ();
+  struct file* file = thread_get_file (fd);
+  return file_write (file, buffer, (off_t) size);
 }
 
 void
 seek (int fd, unsigned position)
 {
-  file_seek ((struct file*) fd, (off_t) position);
+  if (fd < 3 || fd > 128)
+    thread_exit ();
+  struct file* file = thread_get_file (fd);
+  file_seek (file, (off_t) position);
 }
 
 unsigned
 tell (int fd)
 {
-  return file_tell ((struct file*) fd);
+  if (fd < 3 || fd > 128)
+    thread_exit ();
+  struct file* file = thread_get_file (fd);
+  return file_tell (file);
 }
 
 void
 close (int fd)
 {
-  file_close ((struct file*) fd);
+  if (fd < 3 || fd > 128)
+    thread_exit ();
+  struct file* file = thread_remove_file (fd);
+  file_close (file);
 }
 
 void*
