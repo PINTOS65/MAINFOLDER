@@ -611,7 +611,6 @@ int
 thread_push_file (struct file* file)
 {
   ASSERT (file != NULL);
-
   struct file** file_list = thread_current ()->file_list;
 
   if (thread_current ()->file_list_size >= 128)
@@ -634,12 +633,11 @@ thread_remove_file (int fd)
 {
   ASSERT (fd > 2 && fd < 128);
 
-  struct file** file_list = thread_current() -> file_list;
-  
+  struct file** file_list = thread_current() -> file_list; 
   struct file* file = file_list[fd];
-  if (file != NULL) thread_current ()->file_list_size--;
+  
+  if (file != NULL) thread_current() -> file_list_size--;
   file_list[fd] = NULL;
-
   return file;
 }
 
@@ -649,6 +647,5 @@ thread_get_file (int fd)
   ASSERT (fd > 2 && fd < 128);
 
   struct file** file_list = thread_current() -> file_list;
-  
   return file_list[fd];
 }
