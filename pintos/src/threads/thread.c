@@ -611,30 +611,21 @@ int
 thread_push_file (struct file* file)
 {
   ASSERT (file != NULL);
-  
-  struct file** file_list = thread_current() -> file_list;
-  int file_list_size = thread_current() -> file_list_size;
+  struct file** file_list = thread_current ()->file_list;
 
-  if (file_list_size >= 128 || file_list_size < 2)
+  if (thread_current ()->file_list_size >= 128)
     return -1;
 
-  int i;
-
-  for (i = 3; i < file_list_size; i++)
+  for (int i = 3; i < 128; i++)
   {
     if (file_list[i] == NULL)
     {
       file_list[i] = file;
-      file_list_size = file_list_size + 1;
-      thread_current() -> file_list_size = file_list_size;
+      thread_current ()->file_list_size++;
       return i;
     }
   }
-  
-  file_list[file_list_size] = file;
-  file_list_size = file_list_size + 1;
-  thread_current() -> file_list_size = file_list_size;
-  return file_list_size-1;
+  return -1;
 }
 
 struct file*

@@ -40,8 +40,6 @@ process_execute (const char *file_name)
   strlcpy (fn_copy, file_name, PGSIZE);
 
   char* fn_copy2 = palloc_get_page (0);
-  if (fn_copy2 == NULL)
-    return TID_ERROR;
   char dels[2] = {' ', '\0'};
   size_t i = strspn (fn_copy, dels);
   size_t j = strcspn (fn_copy + i, dels);
@@ -50,10 +48,10 @@ process_execute (const char *file_name)
 
   /* Create a new thread to execute FILE_NAME. */
   tid = thread_create (fn_copy2, PRI_DEFAULT, start_process, fn_copy);
+  palloc_free_page (fn_copy2);
   if (tid == TID_ERROR)
   {
     palloc_free_page (fn_copy);
-    palloc_free_page (fn_copy2);
   }
   return tid;
 }
