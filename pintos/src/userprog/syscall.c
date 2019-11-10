@@ -10,6 +10,7 @@
 #include "filesys/filesys.h" //addition
 #include "devices/input.h" //addition
 #include "threads/vaddr.h" //addition
+#include "userprog/pagedir.h" //addition
 #include <string.h> //addition
 
 static void syscall_handler (struct intr_frame *);
@@ -69,7 +70,7 @@ syscall_handler (struct intr_frame *f)
       break;
     case SYS_CREATE:
       unsigned_ = *(unsigned*) valid (f->esp + 8);
-      str_ = valid (*(char**)(f->esp + 4));
+      str_ = valid (*(char**) valid (f->esp + 4));
       f->eax = (uint32_t) create (str_, unsigned_);
       break;
     case SYS_REMOVE:
@@ -86,19 +87,19 @@ syscall_handler (struct intr_frame *f)
       break;
     case SYS_READ:
       unsigned_ = *(unsigned*) valid (f->esp + 12);
-      buf_ = valid (*(void**)(f->esp + 8));
-      int_ = *(int*)(f->esp + 4);
+      buf_ = valid (*(void**) valid (f->esp + 8));
+      int_ = *(int*) valid (f->esp + 4);
       f->eax = (uint32_t) read (int_, buf_, unsigned_);
       break;
     case SYS_WRITE:
       unsigned_ = *(unsigned*) valid (f->esp + 12);
-      buf_ = valid (*(void**)(f->esp + 8));
-      int_ = *(int*)(f->esp + 4);
+      buf_ = valid (*(void**) valid (f->esp + 8));
+      int_ = *(int*) valid (f->esp + 4);
       f->eax = (uint32_t) write (int_, buf_, unsigned_);
       break;
     case SYS_SEEK:
       unsigned_ = *(unsigned*) valid (f->esp + 8);
-      int_ = *(int*)(f->esp + 4);
+      int_ = *(int*) valid (f->esp + 4);
       seek (int_, unsigned_);
       break;
     case SYS_TELL:
@@ -226,6 +227,10 @@ close (int fd)
 void*
 valid (void* addr)
 {
-  if (is_user_vaddr (addr)) return addr;
-  exit (-1);
+  uint32_t* pd = thread_current ()->pagedir;
+  if (is_kernel_vaddr (addr) || pagedir_get_page (pd, addr) == NULL) exit (-1);
+  if (is_kernel_vaddr (addr + 1) || pagedir_get_page (pd, addr + 1) == NULL) exit (-1);
+  if (is_kernel_vaddr (addr + 2) || pagedir_get_page (pd, addr + 2) == NULL) exit (-1);
+  if (is_kernel_vaddr (addr + 3) || pagedir_get_page (pd, addr + 3) == NULL) exit (-1);
+  return addr;
 }
