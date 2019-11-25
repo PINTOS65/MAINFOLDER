@@ -35,6 +35,9 @@ struct pool
 
 /* Two pools: one for kernel data, one for user pages. */
 static struct pool kernel_pool, user_pool;
+struct lock* get_user_pool_lock (void) {return &user_pool.lock;} //addition
+struct bitmap* get_user_pool_bitmap (void) {return user_pool.used_map;} //addition
+uint8_t* get_user_pool_base (void) {return user_pool.base;} //addition
 
 static void init_pool (struct pool *, void *base, size_t page_cnt,
                        const char *name);
@@ -70,6 +73,7 @@ palloc_init (size_t user_page_limit)
 void *
 palloc_get_multiple (enum palloc_flags flags, size_t page_cnt)
 {
+  ASSERT ((flags & PAL_ASSERT) == 0 || (flags & PAL_USER) == 0);
   struct pool *pool = flags & PAL_USER ? &user_pool : &kernel_pool;
   void *pages;
   size_t page_idx;

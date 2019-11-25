@@ -4,6 +4,15 @@
 #include "userprog/gdt.h"
 #include "threads/interrupt.h"
 #include "threads/thread.h"
+#include "userprog/process.h" //addition
+#include "userprog/pagedir.h" //addition
+#include "threads/vaddr.h" //addition
+#include "lib/string.h" //addition
+#ifdef VM
+#include "vm/page.h" //addition
+#include "vm/frame.h" //addition
+#include "vm/swap.h" //addition
+#endif
 
 /* Number of page faults processed. */
 static long long page_fault_cnt;
@@ -147,6 +156,59 @@ page_fault (struct intr_frame *f)
   not_present = (f->error_code & PF_P) == 0;
   write = (f->error_code & PF_W) != 0;
   user = (f->error_code & PF_U) != 0;
+
+#ifdef VM
+  if (is_kernel_vaddr (fault_addr))
+    thread_exit ();
+
+  void* fault_page = pg_round_down (fault_addr);
+  enum spte_flag flag = spt_get_flag (fault_page);
+  if (not_present && flag != SPTE_INVALID)
+  {
+    void* ref = spt_get_ref (fault_page);
+    bool writable = spt_get_writable (fault_page);
+    void* kpage = falloc_get_frame (0, 1);
+    switch (flag)
+    {
+      case SPTE_FILE:
+        /* want to fill in */
+        break;
+      case SPTE_SWAP:
+        swap_read_slot (ref, kpage);
+        swap_free_slot (ref);
+        spt_set (fault_page, NULL, SPTE_FILE, writable); //temp
+        break;
+      case SPTE_ZERO:
+        memset (kpage, 0, PGSIZE);
+        break;
+      case SPTE_INVALID:
+        PANIC ("why SPTE_INVALID again?");
+    }
+    pagedir_set_page (thread_current ()->pagedir, fault_page, kpage, writable);
+    ft_set (kpage, fault_page);
+    return;
+  }
+
+  void* esp = user ? f->esp : thread_current ()->saved_esp;
+  if (not_present && fault_addr >= esp - 32
+				&& fault_page >= PHYS_BASE - (1 << 23))
+  {
+    uint32_t* pd = thread_current ()->pagedir;
+    void* kpage = falloc_get_frame (PAL_ZERO, 1);
+    if (kpage != NULL)
+    {
+      bool success = pagedir_get_page (pd, fault_page) == NULL
+		&& pagedir_set_page (pd, fault_page, kpage, true);
+      if (success)
+      {
+        ft_set (kpage, fault_page);
+        spt_set (fault_page, NULL, SPTE_ZERO, true);
+        return;
+      }
+    }
+  }
+  thread_exit ();
+#endif
 
   /* To implement virtual memory, delete the rest of the function
      body, and replace it with code that brings in the page to

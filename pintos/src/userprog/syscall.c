@@ -12,6 +12,9 @@
 #include "threads/vaddr.h" //addition
 #include "userprog/pagedir.h" //addition
 #include <string.h> //addition
+#ifdef VM
+#include "vm/page.h" //addition
+#endif
 
 static void syscall_handler (struct intr_frame *);
 
@@ -29,6 +32,9 @@ unsigned tell (int);
 void close (int);
 
 void* valid (void*);
+#ifdef VM
+void* esp;
+#endif
 
 void
 syscall_init (void) 
@@ -47,6 +53,10 @@ syscall_handler (struct intr_frame *f)
   tid_t pid_;
   unsigned unsigned_;
   void* buf_;
+
+#ifdef VM
+  esp = f->esp;
+#endif
 
   int sysnum = *(int*) valid (f->esp);
 
@@ -227,10 +237,27 @@ close (int fd)
 void*
 valid (void* addr)
 {
-  uint32_t* pd = thread_current ()->pagedir;
+  uint32_t* pd UNUSED = thread_current ()->pagedir;
+  if (addr == NULL) exit (-1);
+  if (is_kernel_vaddr (addr + 3)) exit (-1);
+#ifdef VM
+  if (spt_get_flag (pg_round_down (addr + 3)) == SPTE_INVALID
+	|| spt_get_flag (pg_round_down (addr)) == SPTE_INVALID)
+  {
+    if (addr < esp - 32 || addr < PHYS_BASE - (1 << 23))
+      exit (-1);
+    else thread_current ()->saved_esp = esp;
+  }
+#else
+  if (pagedir_get_page (pd, addr + 3) == NULL) exit (-1);
+  if (pagedir_get_page (pd, addr) == NULL) exit (-1);
+#endif
+
+/*
   if (is_kernel_vaddr (addr) || pagedir_get_page (pd, addr) == NULL) exit (-1);
   if (is_kernel_vaddr (addr + 1) || pagedir_get_page (pd, addr + 1) == NULL) exit (-1);
   if (is_kernel_vaddr (addr + 2) || pagedir_get_page (pd, addr + 2) == NULL) exit (-1);
   if (is_kernel_vaddr (addr + 3) || pagedir_get_page (pd, addr + 3) == NULL) exit (-1);
+*/
   return addr;
 }

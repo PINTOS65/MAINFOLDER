@@ -649,3 +649,14 @@ thread_get_file (int fd)
   struct file** file_list = thread_current() -> file_list;
   return file_list[fd];
 }
+
+struct thread*
+thread_from_tid (tid_t tid)
+{
+  for (struct list_elem* e = list_front (&all_list); e != list_end (&all_list); e = list_next (e))
+  {
+    if (list_entry (e, struct thread, allelem)->tid == tid)
+      return list_entry (e, struct thread, allelem);
+  }
+  return NULL;
+}

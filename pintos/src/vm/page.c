@@ -1,0 +1,178 @@
+#include "vm/page.h"
+#include "vm/swap.h"
+#include "threads/thread.h"
+#include "threads/malloc.h"
+#include "threads/synch.h"
+#include "threads/vaddr.h"
+#include "lib/kernel/hash.h"
+
+struct spte
+{
+  tid_t pid;
+  void* vaddr;
+  void* ref;
+  enum spte_flag flag;
+  bool writable;
+  struct hash_elem elem;
+};
+
+struct hash spt;
+struct hash_iterator spt_iterator;
+struct lock spt_lock;
+unsigned spte_hash_func (const struct hash_elem*, void*);
+bool spte_less_func (const struct hash_elem*, const struct hash_elem*, void*);
+
+void
+spt_init (void)
+{
+  hash_init (&spt, spte_hash_func, spte_less_func, NULL);
+  lock_init (&spt_lock);
+}
+
+void
+spt_set (void* vaddr, void* ref, enum spte_flag flag, bool writable)
+{
+  ASSERT (pg_ofs (vaddr) == 0);
+  ASSERT (vaddr != NULL);
+  ASSERT (flag != SPTE_INVALID);
+  struct spte* spte = malloc (sizeof *spte);
+  spte->pid = thread_tid ();
+  spte->vaddr = vaddr;
+  spte->ref = ref;
+  spte->flag = flag;
+  spte->writable = writable;
+
+  lock_acquire (&spt_lock);
+  hash_replace (&spt, &spte->elem);
+  lock_release (&spt_lock);
+}
+
+void*
+spt_get_ref (void* vaddr)
+{
+  ASSERT (pg_ofs (vaddr) == 0);
+  struct spte* spte = malloc (sizeof *spte);
+  spte->pid = thread_tid ();
+  spte->vaddr = vaddr;
+
+  lock_acquire (&spt_lock);
+  struct hash_elem* target = hash_find (&spt, &spte->elem);
+  void* ref = target != NULL ? hash_entry (target, struct spte, elem)->ref : NULL;
+  lock_release (&spt_lock);
+
+  free (spte);
+  return ref;
+}
+
+enum spte_flag
+spt_get_flag (void* vaddr)
+{
+  ASSERT (pg_ofs (vaddr) == 0);
+  struct spte* spte = malloc (sizeof *spte);
+  spte->pid = thread_tid ();
+  spte->vaddr = vaddr;
+
+  lock_acquire (&spt_lock);
+  struct hash_elem* target = hash_find (&spt, &spte->elem);
+  enum spte_flag flag = target != NULL ? hash_entry (target, struct spte, elem)->flag : SPTE_INVALID;
+  lock_release (&spt_lock);
+
+  free (spte);
+  return flag;
+}
+
+bool
+spt_get_writable (void* vaddr)
+{
+  ASSERT (pg_ofs (vaddr) == 0);
+  struct spte* spte = malloc (sizeof *spte);
+  spte->pid = thread_tid ();
+  spte->vaddr = vaddr;
+
+  lock_acquire (&spt_lock);
+  struct hash_elem* target = hash_find (&spt, &spte->elem);
+  bool writable = target != NULL ? hash_entry (target, struct spte, elem)->writable : false;
+  lock_release (&spt_lock);
+
+  free (spte);
+  return writable;
+}
+
+
+void*
+spt_remove (void* vaddr)
+{
+  ASSERT (pg_ofs (vaddr) == 0);
+  struct spte* spte1 = malloc (sizeof *spte1);
+  spte1->pid = thread_tid ();
+  spte1->vaddr = vaddr;
+
+  lock_acquire (&spt_lock);
+  struct hash_elem* target = hash_find (&spt, &spte1->elem);
+  struct spte* spte2 = target != NULL ? hash_entry (target, struct spte, elem) : NULL;
+  lock_release (&spt_lock);
+
+  free (spte1);
+  void* ref = spte2->ref;
+
+  lock_acquire (&spt_lock);
+  hash_delete (&spt, &spte2->elem);
+  lock_release (&spt_lock);
+
+  free (spte2);
+  return ref;
+}
+
+void
+spt_free_process (tid_t pid)
+{
+  struct spte* spte;
+  struct spte* entries[hash_size (&spt)];
+  int entries_cnt = 0;
+
+  lock_acquire (&spt_lock);
+  hash_first (&spt_iterator, &spt);
+  for (struct hash_elem* e = hash_cur (&spt_iterator); e != NULL; e = hash_next (&spt_iterator))
+  {
+    spte = hash_entry (e, struct spte, elem);
+    if (spte->pid == pid)
+    {
+      switch (spte->flag)
+      {
+        case SPTE_FILE:
+          /* want to fill */
+          break;
+        case SPTE_SWAP:
+          swap_free_slot (spte->ref);
+          break;
+        case SPTE_ZERO:
+          break;
+        case SPTE_INVALID:
+          PANIC ("who set you invalid?");
+      }
+      entries[entries_cnt++] = spte;
+    }
+  }
+  for (int i = 0; i < entries_cnt; i++)
+  {
+    hash_delete (&spt, &entries[i]->elem);
+    free (entries[i]);
+  }
+  lock_release (&spt_lock);
+}
+
+unsigned spte_hash_func (const struct hash_elem* e, void* aux UNUSED)
+{
+  return hash_bytes (&hash_entry (e, struct spte, elem)->vaddr, 4);
+}
+
+bool spte_less_func (const struct hash_elem* a, const struct hash_elem* b, void* aux UNUSED)
+{
+  tid_t pid_a = hash_entry (a, struct spte, elem)->pid;
+  tid_t pid_b = hash_entry (b, struct spte, elem)->pid;
+  void* vaddr_a = hash_entry (a, struct spte, elem)->vaddr;
+  void* vaddr_b = hash_entry (b, struct spte, elem)->vaddr;
+
+  if (pid_a != pid_b) return pid_a < pid_b;
+  return vaddr_a < vaddr_b;
+}
