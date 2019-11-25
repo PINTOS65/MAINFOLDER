@@ -106,7 +106,11 @@ struct thread
     struct list_elem childelem;		/* (addition) list element for child_list */
     struct thread* parent;		/* (addition) parent thread */
     struct file* file_list[128];        /* (addition) file descriptor list */
-    int file_list_size;          /* (addition) file list size */
+    int file_list_size;			/* (addition) file list size */
+#endif
+
+#ifdef VM
+    void* saved_esp;			/* (addition) saved esp */
 #endif
 
     /* Owned by thread.c. */
@@ -149,9 +153,12 @@ void thread_set_nice (int);
 int thread_get_recent_cpu (void);
 int thread_get_load_avg (void);
 
-/* addition */
+/* addition (project 2) */
 int thread_push_file (struct file*);
 struct file* thread_remove_file (int);
 struct file* thread_get_file (int);
+
+/* addition (project 3) */
+struct thread* thread_from_tid (tid_t);
 
 #endif /* threads/thread.h */
