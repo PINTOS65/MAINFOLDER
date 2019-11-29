@@ -1,86 +1,61 @@
 #include "vm/swap.h"
 #include "threads/synch.h"
-#include "threads/malloc.h"
 #include "threads/vaddr.h"
-#include "lib/kernel/hash.h"
+#include "threads/malloc.h"
+#include "lib/kernel/bitmap.h"
 #include "devices/block.h"
 
-struct ste
-{
-  struct block* slot;
-  struct hash_elem elem;
-};
+#define SLOT_CNT (PGSIZE / BLOCK_SECTOR_SIZE)
 
-struct hash st;
-struct lock st_lock;
+static struct bitmap* st;
 
-unsigned swap_hash_func (const struct hash_elem*, void*);
-bool swap_less_func (const struct hash_elem*, const struct hash_elem*, void*);
+static struct block* swap_block;
+static struct lock swap_lock;
 
 void
 swap_init (void)
 {
-  hash_init (&st, swap_hash_func, swap_less_func, NULL);
-  lock_init (&st_lock);
-}
-
-void*
-swap_get_slot (void)
-{
-  struct block* slot = block_get_role (BLOCK_SWAP);
-  if (slot == NULL) return NULL;
-  struct ste* ste = malloc (sizeof ste);
-  ste->slot = slot;
-
-  lock_acquire (&st_lock);
-  hash_replace (&st, &ste->elem);
-  lock_release (&st_lock);
-
-  return slot;
-}
-
-void
-swap_free_slot (void* slot)
-{
-  struct ste* ste1 = malloc (sizeof ste1);
-  ste1->slot = slot;
-
-  lock_acquire (&st_lock);
-  struct hash_elem* target = hash_find (&st, &ste1->elem);
-  struct ste* ste2 = target != NULL ? hash_entry (target, struct ste, elem) : NULL;
-  lock_release (&st_lock);
-
-  free (ste1);
-
-  lock_acquire (&st_lock);
-  if (target != NULL) hash_delete (&st, &ste2->elem);
-  lock_release (&st_lock);
-
-  free (ste2);
-}
-
-void
-swap_read_slot (void* slot, void* buf)
-{
-  block_read (slot, PGSIZE, buf);
-}
-
-void
-swap_write_slot (void* slot, const void* buf)
-{
-  block_write (slot, PGSIZE, buf);
-}
-
-unsigned
-swap_hash_func (const struct hash_elem* e, void* aux UNUSED)
-{
-  return hash_bytes (&hash_entry (e, struct ste, elem)->slot, 4);
+  swap_block = block_get_role (BLOCK_SWAP);
+  //printf ("swap_block: %#x, swap_size: %d, slot per page: %d\n", (unsigned) swap_block, block_size (swap_block), SLOT_CNT);
+  if (swap_block == NULL) PANIC ("Ah Wae Ssibal");
+  st = bitmap_create (block_size (swap_block));
+  lock_init (&swap_lock);
 }
 
 bool
-swap_less_func (const struct hash_elem* a, const struct hash_elem* b, void* aux UNUSED)
+swap_in (void* slot, void* buf)
 {
-  struct block* slot_a = hash_entry (a, struct ste, elem)->slot;
-  struct block* slot_b = hash_entry (b, struct ste, elem)->slot;
-  return slot_a < slot_b;
+  lock_acquire (&swap_lock);
+  size_t start = (slot - (void*) swap_block) / BLOCK_SECTOR_SIZE;
+  //size_t start = (unsigned) slot;
+  if (!bitmap_all (st, start, SLOT_CNT))
+  {
+    lock_release (&swap_lock);
+    return false;
+  }
+  bitmap_set_multiple (st, start, SLOT_CNT, false);
+  for (size_t i = 0; i < SLOT_CNT; i++)
+    block_read (swap_block, start + i, buf + i * BLOCK_SECTOR_SIZE);
+  lock_release (&swap_lock);
+  return true;
+}
+
+void*
+swap_out (const void* buf)
+{
+  lock_acquire (&swap_lock);
+  size_t start = bitmap_scan_and_flip (st, 0, SLOT_CNT, false);
+  if (start == BITMAP_ERROR)
+  {
+    lock_release (&swap_lock);
+    return NULL;
+  }
+  lock_release (&swap_lock);
+  for (size_t i = 0; i < SLOT_CNT; i++)
+  {
+    block_write (swap_block, start + i, buf + i * BLOCK_SECTOR_SIZE);
+  }
+
+  return (void*) swap_block + start * BLOCK_SECTOR_SIZE;
+  //return (void*) start;
 }

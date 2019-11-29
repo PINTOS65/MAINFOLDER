@@ -606,7 +606,7 @@ allocate_tid (void)
    Used by switch.S, which can't figure it out on its own. */
 uint32_t thread_stack_ofs = offsetof (struct thread, stack);
 
-/* (addition) psuh file to file_list */
+/* (addition) push file to file_list */
 int
 thread_push_file (struct file* file)
 {
@@ -660,3 +660,47 @@ thread_from_tid (tid_t tid)
   }
   return NULL;
 }
+
+#ifdef VM
+
+mapid_t
+thread_push_map (struct map* map)
+{
+  struct map** map_list = thread_current ()->map_list;
+
+  for (int i = 0; i < MAX_MAP_CNT; i++)
+  {
+    if (map_list[i] == NULL)
+    {
+      map_list[i] = map;
+      return i;
+    }
+  }
+  return -1;
+}
+
+struct map*
+thread_remove_map (mapid_t id)
+{
+  ASSERT (id >= 0 && id < MAX_MAP_CNT);
+
+  struct map** map_list = thread_current ()->map_list;
+  struct map* map = map_list[id];
+  
+  map_list[id] = NULL;
+  
+  return map;
+}
+
+struct map*
+thread_get_map (mapid_t id)
+{
+  ASSERT (id >= 0 && id < MAX_MAP_CNT);
+
+  struct map** map_list = thread_current ()->map_list;
+  struct map* map = map_list[id];
+
+  return map;
+}
+
+#endif
