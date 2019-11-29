@@ -46,7 +46,7 @@ pagedir_destroy (uint32_t *pd)
           if (*pte & PTE_P)
           {
 #ifdef VM
-            falloc_free_frame (pte_get_page (*pte), 1);
+            falloc_free_frame (pte_get_page (*pte));
             ft_remove (pte_get_page (*pte));
 #else
             palloc_free_page (pte_get_page (*pte));

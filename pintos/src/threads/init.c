@@ -107,7 +107,6 @@ main (void)
 #ifdef VM
   spt_init ();
   ft_init ();
-  swap_init ();
 #endif
 
   /* Segmentation. */
@@ -136,6 +135,10 @@ main (void)
   ide_init ();
   locate_block_devices ();
   filesys_init (format_filesys);
+#endif
+
+#ifdef VM
+  swap_init ();
 #endif
 
   printf ("Boot complete.\n");

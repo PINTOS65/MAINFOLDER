@@ -2,11 +2,10 @@
 #define VM_SWAP_H
 
 #include <stddef.h>
+#include <stdbool.h>
 
 void swap_init (void);
-void* swap_get_slot (void);
-void swap_free_slot (void*);
-void swap_read_slot (void*, void*);
-void swap_write_slot (void*, const void*);
+bool swap_in (void*, void*);
+void* swap_out (const void*);
 
 #endif /* vm/swap.h */

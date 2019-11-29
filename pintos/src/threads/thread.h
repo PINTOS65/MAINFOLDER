@@ -18,6 +18,18 @@ enum thread_status
 /* Thread identifier type.
    You can redefine this to whatever type you like. */
 typedef int tid_t;
+
+/* (addition) memory mapped files */
+#ifdef VM
+#define MAX_MAP_CNT 10
+typedef int mapid_t;
+struct map
+{
+  void* upage;
+  int fd;
+};
+#endif
+
 #define TID_ERROR ((tid_t) -1)          /* Error value for tid_t. */
 
 /* Thread priorities. */
@@ -111,6 +123,7 @@ struct thread
 
 #ifdef VM
     void* saved_esp;			/* (addition) saved esp */
+    struct map* map_list[MAX_MAP_CNT];	/* (addition) memory mapped files list */
 #endif
 
     /* Owned by thread.c. */
@@ -160,5 +173,11 @@ struct file* thread_get_file (int);
 
 /* addition (project 3) */
 struct thread* thread_from_tid (tid_t);
+
+#ifdef VM
+mapid_t thread_push_map (struct map*);
+struct map* thread_remove_map (mapid_t);
+struct map* thread_get_map (mapid_t);
+#endif
 
 #endif /* threads/thread.h */

@@ -4,7 +4,6 @@
 #include "threads/malloc.h"
 #include "threads/synch.h"
 #include "threads/vaddr.h"
-#include "filesys/file.h"
 #include "lib/kernel/hash.h"
 
 struct spte
@@ -12,17 +11,16 @@ struct spte
   tid_t pid;
   void* vaddr;
   void* ref;
-  off_t saved_file_pos;
   enum spte_flag flag;
   bool writable;
   struct hash_elem elem;
 };
 
-static struct hash spt;
-static struct hash_iterator spt_iterator;
-static struct lock spt_lock;
-static unsigned spte_hash_func (const struct hash_elem*, void*);
-static bool spte_less_func (const struct hash_elem*, const struct hash_elem*, void*);
+struct hash spt;
+struct hash_iterator spt_iterator;
+struct lock spt_lock;
+unsigned spte_hash_func (const struct hash_elem*, void*);
+bool spte_less_func (const struct hash_elem*, const struct hash_elem*, void*);
 
 void
 spt_init (void)
@@ -50,11 +48,11 @@ spt_set (void* vaddr, void* ref, enum spte_flag flag, bool writable)
 }
 
 void*
-spt_get_ref_kernel (tid_t pid, void* vaddr)
+spt_get_ref (void* vaddr)
 {
   ASSERT (pg_ofs (vaddr) == 0);
   struct spte* spte = malloc (sizeof *spte);
-  spte->pid = pid;
+  spte->pid = thread_tid ();
   spte->vaddr = vaddr;
 
   lock_acquire (&spt_lock);
@@ -66,18 +64,12 @@ spt_get_ref_kernel (tid_t pid, void* vaddr)
   return ref;
 }
 
-void*
-spt_get_ref (void* vaddr)
-{
-  return spt_get_ref_kernel (thread_tid (), vaddr);
-}
-
 enum spte_flag
-spt_get_flag_kernel (tid_t pid, void* vaddr)
+spt_get_flag (void* vaddr)
 {
   ASSERT (pg_ofs (vaddr) == 0);
   struct spte* spte = malloc (sizeof *spte);
-  spte->pid = pid;
+  spte->pid = thread_tid ();
   spte->vaddr = vaddr;
 
   lock_acquire (&spt_lock);
@@ -89,18 +81,12 @@ spt_get_flag_kernel (tid_t pid, void* vaddr)
   return flag;
 }
 
-enum spte_flag
-spt_get_flag (void* vaddr)
-{
-  return spt_get_flag_kernel (thread_tid (), vaddr);
-}
-
 bool
-spt_get_writable_kernel (tid_t pid, void* vaddr)
+spt_get_writable (void* vaddr)
 {
   ASSERT (pg_ofs (vaddr) == 0);
   struct spte* spte = malloc (sizeof *spte);
-  spte->pid = pid;
+  spte->pid = thread_tid ();
   spte->vaddr = vaddr;
 
   lock_acquire (&spt_lock);
@@ -112,11 +98,6 @@ spt_get_writable_kernel (tid_t pid, void* vaddr)
   return writable;
 }
 
-bool
-spt_get_writable (void* vaddr)
-{
-  return spt_get_writable_kernel (thread_tid (), vaddr);
-}
 
 void*
 spt_remove (void* vaddr)
@@ -129,14 +110,16 @@ spt_remove (void* vaddr)
   lock_acquire (&spt_lock);
   struct hash_elem* target = hash_find (&spt, &spte1->elem);
   struct spte* spte2 = target != NULL ? hash_entry (target, struct spte, elem) : NULL;
-  void* ref = spte2->ref;
-
-  hash_delete (&spt, &spte2->elem);
-  free (spte2);
   lock_release (&spt_lock);
 
   free (spte1);
+  void* ref = spte2->ref;
 
+  lock_acquire (&spt_lock);
+  hash_delete (&spt, &spte2->elem);
+  lock_release (&spt_lock);
+
+  free (spte2);
   return ref;
 }
 
@@ -154,22 +137,19 @@ spt_free_process (tid_t pid)
     spte = hash_entry (e, struct spte, elem);
     if (spte->pid == pid)
     {
-      void* dummy = malloc (PGSIZE);
       switch (spte->flag)
       {
-        case SPTE_MMRY:
-          break;
         case SPTE_FILE:
+          load(file_name, 
           break;
         case SPTE_SWAP:
-          swap_in (spte->ref, dummy);
+          swap_free_slot (spte->ref);
           break;
         case SPTE_ZERO:
           break;
         case SPTE_INVALID:
           PANIC ("who set you invalid?");
       }
-      free (dummy);
       entries[entries_cnt++] = spte;
     }
   }
@@ -181,55 +161,12 @@ spt_free_process (tid_t pid)
   lock_release (&spt_lock);
 }
 
-void
-spte_file_seek (void* vaddr, off_t pos)
+unsigned spte_hash_func (const struct hash_elem* e, void* aux UNUSED)
 {
-  ASSERT (pg_ofs (vaddr) == 0);
-  struct spte* spte = malloc (sizeof *spte);
-  spte->pid = thread_tid ();
-  spte->vaddr = vaddr;
-
-  lock_acquire (&spt_lock);
-  struct hash_elem* target = hash_find (&spt, &spte->elem);
-  struct spte* target_spte = target != NULL ? hash_entry (target, struct spte, elem) : NULL;
-
-  ASSERT (target_spte != NULL);
-  ASSERT (pos >= 0);
-  target_spte->saved_file_pos = pos;
-  lock_release (&spt_lock);
-
-  free (spte);
+  return hash_bytes (&hash_entry (e, struct spte, elem)->vaddr, 4);
 }
 
-off_t
-spte_file_tell (void* vaddr)
-{
-  ASSERT (pg_ofs (vaddr) == 0);
-  struct spte* spte = malloc (sizeof *spte);
-  spte->pid = thread_tid ();
-  spte->vaddr = vaddr;
-
-  lock_acquire (&spt_lock);
-  struct hash_elem* target = hash_find (&spt, &spte->elem);
-  struct spte* target_spte = target != NULL ? hash_entry (target, struct spte, elem) : NULL;
-
-  ASSERT (target_spte != NULL);
-  off_t result = target_spte->saved_file_pos;
-  lock_release (&spt_lock);
-
-  free (spte);
-  return result;
-}
-
-static unsigned
-spte_hash_func (const struct hash_elem* e, void* aux UNUSED)
-{
-  struct spte* spte = hash_entry (e, struct spte, elem);
-  return hash_int ((int) spte->vaddr * (int) spte->pid);
-}
-
-static bool
-spte_less_func (const struct hash_elem* a, const struct hash_elem* b, void* aux UNUSED)
+bool spte_less_func (const struct hash_elem* a, const struct hash_elem* b, void* aux UNUSED)
 {
   tid_t pid_a = hash_entry (a, struct spte, elem)->pid;
   tid_t pid_b = hash_entry (b, struct spte, elem)->pid;

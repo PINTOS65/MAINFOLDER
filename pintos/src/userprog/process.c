@@ -8,6 +8,7 @@
 #include "userprog/gdt.h"
 #include "userprog/pagedir.h"
 #include "userprog/tss.h"
+#include "userprog/syscall.h" //addition
 #include "filesys/directory.h"
 #include "filesys/file.h"
 #include "filesys/filesys.h"
@@ -192,10 +193,23 @@ process_exit (void)
   struct thread *cur = thread_current ();
   uint32_t *pd;
 
+#ifdef VM
+  /* unmapping all the mappings */
+  for (int i = 0; i < MAX_MAP_CNT; i++)
+  {
+    if (cur->map_list [i] != NULL)
+      munmap (i);
+    cur->map_list [i] = NULL;
+  }
+#endif
+
   /* closing all the files */
   for (int i = 0; i < 128; i++)
   {
-    if (cur->file_list [i] != NULL) file_close (cur->file_list [i]);
+    if (cur->file_list [i] != NULL)
+    {
+      file_close (cur->file_list [i]);
+    }
     cur->file_list [i] = NULL;
   }
 
@@ -333,6 +347,10 @@ load (const char* file_name, void (**eip) (void), void **esp)
       goto done; 
     }
 
+#ifdef VM
+  thread_push_file (file);
+#endif
+
   /* Read and verify executable header. */
   if (file_read (file, &ehdr, sizeof ehdr) != sizeof ehdr
       || memcmp (ehdr.e_ident, "\177ELF\1\1\1", 7)
@@ -416,7 +434,10 @@ load (const char* file_name, void (**eip) (void), void **esp)
 
  done:
   /* We arrive here whether the load is successful or not. */
+#ifdef VM
+#else
   file_close (file);
+#endif
   return success;
 }
 
@@ -500,23 +521,55 @@ load_segment (struct file *file, off_t ofs, uint8_t *upage,
       size_t page_read_bytes = read_bytes < PGSIZE ? read_bytes : PGSIZE;
       size_t page_zero_bytes = PGSIZE - page_read_bytes;
 
-      /* Get a page of memory. */
 #ifdef VM
-      uint8_t *kpage = falloc_get_frame (0, 1);
+      sema_down (&pf_sema);
+      if (page_zero_bytes == PGSIZE)
+      {
+        spt_set (upage, NULL, SPTE_ZERO, writable);
+      }
+      else if (page_read_bytes == PGSIZE)
+      {
+        spt_set (upage, file, SPTE_FILE, writable);
+        spte_file_seek (upage, file_tell (file));
+        file_seek (file, file_tell (file) + PGSIZE);
+      }
+      else
+      {
+        uint8_t* kpage = falloc_get_frame (0);
+        if (kpage == NULL)
+        {
+          sema_up (&pf_sema);
+          return false;
+        }
+        if (file_read (file, kpage, page_read_bytes) != (int) page_read_bytes)
+        {
+          falloc_free_frame (kpage);
+          sema_up (&pf_sema);
+          return false;
+        }
+        memset (kpage + page_read_bytes, 0, page_zero_bytes);
+        if (!install_page (upage, kpage, writable))
+        {
+          falloc_free_frame (kpage);
+          sema_up (&pf_sema);
+          return false;
+        }
+        ft_set (kpage, upage);
+        ft_pin (kpage);
+        spt_set (upage, file, SPTE_FILE, writable);
+        spte_file_seek (upage, file_tell (file) - page_read_bytes);
+      }
+      sema_up (&pf_sema);
 #else
+      /* Get a page of memory. */
       uint8_t *kpage = palloc_get_page (PAL_USER);
-#endif
       if (kpage == NULL)
         return false;
 
       /* Load this page. */
       if (file_read (file, kpage, page_read_bytes) != (int) page_read_bytes)
         {
-#ifdef VM
-          falloc_free_frame (kpage, 1);
-#else
           palloc_free_page (kpage);
-#endif
           return false; 
         }
       memset (kpage + page_read_bytes, 0, page_zero_bytes);
@@ -524,16 +577,9 @@ load_segment (struct file *file, off_t ofs, uint8_t *upage,
       /* Add the page to the process's address space. */
       if (!install_page (upage, kpage, writable)) 
         {
-#ifdef VM
-          falloc_free_frame (kpage, 1);
-#else
           palloc_free_page (kpage);
-#endif
           return false; 
         }
-#ifdef VM
-      ft_set (kpage, upage);
-      spt_set (upage, NULL, SPTE_FILE, writable);
 #endif
 
       /* Advance. */
@@ -553,7 +599,8 @@ setup_stack (void **esp)
   bool success = false;
 
 #ifdef VM
-  kpage = falloc_get_frame (PAL_ZERO, 1);
+  sema_down (&pf_sema);
+  kpage = falloc_get_frame (PAL_ZERO);
 #else
   kpage = palloc_get_page (PAL_USER | PAL_ZERO);
 #endif
@@ -570,11 +617,14 @@ setup_stack (void **esp)
       }
       else
 #ifdef VM
-        falloc_free_frame (kpage, 1);
+        falloc_free_frame (kpage);
 #else
         palloc_free_page (kpage);
 #endif
     }
+#ifdef VM
+  sema_up (&pf_sema);
+#endif
   return success;
 }
 
