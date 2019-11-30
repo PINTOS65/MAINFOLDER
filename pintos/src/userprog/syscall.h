@@ -1,8 +1,8 @@
 #ifndef USERPROG_SYSCALL_H
 #define USERPROG_SYSCALL_H
 
-#ifdef VM
 #include "threads/thread.h"
+#ifdef VM
 void munmap (mapid_t);
 #endif
 

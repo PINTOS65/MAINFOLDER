@@ -19,6 +19,8 @@ enum thread_status
    You can redefine this to whatever type you like. */
 typedef int tid_t;
 
+#define MAX_FILE_CNT 20 //(addition) limit of number of open files
+
 /* (addition) memory mapped files */
 #ifdef VM
 #define MAX_MAP_CNT 10
@@ -95,6 +97,15 @@ struct map
    blocked state is on a semaphore wait list. */
 struct thread
   {
+
+#ifdef USERPROG
+    struct file* file_list[MAX_FILE_CNT];/* (addition) file descriptor list */
+#endif
+
+#ifdef VM
+    struct map* map_list[MAX_MAP_CNT];	/* (addition) memory mapped files list */
+#endif
+
     /* Owned by thread.c. */
     tid_t tid;                          /* Thread identifier. */
     enum thread_status status;          /* Thread state. */
@@ -108,22 +119,19 @@ struct thread
 
 #ifdef USERPROG
     /* Owned by userprog/process.c. */
-    uint32_t *pagedir;                  /* Page directory. */
-    int exit_status;			/* (addition) exit status */
-    bool exec_status;			/* (addition) whether exec(child) is successful */
     struct semaphore exec_sema;		/* (addition) semaphore for exec that parent holds */
     struct semaphore wait_sema;		/* (addition) semaphore for wait that child holds */
     struct semaphore exit_sema;		/* (addition) semaphore for exit that child holds */
     struct list child_list;		/* (addition) child list */
     struct list_elem childelem;		/* (addition) list element for child_list */
     struct thread* parent;		/* (addition) parent thread */
-    struct file* file_list[128];        /* (addition) file descriptor list */
-    int file_list_size;			/* (addition) file list size */
+    uint32_t *pagedir;			/* Page directory. */
+    int exit_status;			/* (addition) exit status */
+    bool exec_status;			/* (addition) whether exec(child) is successful */
 #endif
 
 #ifdef VM
     void* saved_esp;			/* (addition) saved esp */
-    struct map* map_list[MAX_MAP_CNT];	/* (addition) memory mapped files list */
 #endif
 
     /* Owned by thread.c. */

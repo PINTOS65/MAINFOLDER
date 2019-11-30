@@ -481,11 +481,13 @@ init_thread (struct thread *t, const char *name, int priority)
   sema_init (&t->exit_sema, 0); //addition
 
   /* init file list */ 
-  for (int fd = 3; fd < 128 ; fd++)
-  {
+  for (int fd = 3; fd < MAX_FILE_CNT; fd++)
     t->file_list[fd] = NULL;
-  }
-  t->file_list_size = 3;
+#ifdef VM
+  /* init map list */
+  for (int mapid = 0; mapid < MAX_MAP_CNT; mapid++)
+    t->map_list[mapid] = NULL;
+#endif
     
   old_level = intr_disable ();
   list_push_back (&all_list, &t->allelem);
@@ -613,15 +615,11 @@ thread_push_file (struct file* file)
   ASSERT (file != NULL);
   struct file** file_list = thread_current ()->file_list;
 
-  if (thread_current ()->file_list_size >= 128)
-    return -1;
-
-  for (int i = 3; i < 128; i++)
+  for (int i = 3; i < MAX_FILE_CNT; i++)
   {
     if (file_list[i] == NULL)
     {
       file_list[i] = file;
-      thread_current ()->file_list_size++;
       return i;
     }
   }
@@ -631,12 +629,11 @@ thread_push_file (struct file* file)
 struct file*
 thread_remove_file (int fd)
 {
-  ASSERT (fd > 2 && fd < 128);
+  ASSERT (fd > 2 && fd < MAX_FILE_CNT);
 
   struct file** file_list = thread_current() -> file_list; 
   struct file* file = file_list[fd];
-  
-  if (file != NULL) thread_current() -> file_list_size--;
+
   file_list[fd] = NULL;
   return file;
 }
@@ -644,7 +641,7 @@ thread_remove_file (int fd)
 struct file*
 thread_get_file (int fd)
 {
-  ASSERT (fd > 2 && fd < 128);
+  ASSERT (fd > 2 && fd < MAX_FILE_CNT);
 
   struct file** file_list = thread_current() -> file_list;
   return file_list[fd];
