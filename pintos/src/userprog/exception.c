@@ -190,14 +190,9 @@ page_fault (struct intr_frame *f)
             //page_read_bytes = file_read (ref, kpage, PGSIZE);
             page_read_bytes = file_read_at (ref, kpage, PGSIZE, spte_file_tell (fault_page));
             if (page_read_bytes == 0)
-            {
-              ref = file_reopen (ref);
-              page_read_bytes = file_read_at (ref, kpage, PGSIZE, spte_file_tell (fault_page));
-              file_close (ref);
-              //spt_set (fault_page, ref, SPTE_FILE, writable);
-            }
+              PANIC ("why you read 0????");
             if (page_read_bytes < PGSIZE)
-              memset (kpage, 0, PGSIZE - page_read_bytes);
+              memset (kpage + page_read_bytes, 0, PGSIZE - page_read_bytes);
             break;
           case SPTE_SWAP:
             if (!swap_in (ref, kpage))

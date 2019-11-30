@@ -376,6 +376,7 @@ mmap (int fd, void* addr)
     return -1;
   }
 
+  file = file_reopen (file);
   for (int i = 0; i < size; i = i + PGSIZE)
   {
     spt_set (addr + i, file, SPTE_FILE, true);
@@ -403,7 +404,7 @@ munmap (mapid_t mapping)
   }
 
   void* addr = map->upage;
-  struct file* file = thread_remove_file (map->fd);
+  struct file* file = thread_get_file (map->fd);
   off_t size = (file == NULL) ? 0 : file_length (file);
   free (map);
   if (size == 0)
