@@ -133,7 +133,7 @@ syscall_handler (struct intr_frame *f)
       close (int_);
       break;
     case SYS_MMAP:
-      buf_ = valid (*(void**) valid (f->esp + 8));
+      buf_ = *(void**) valid (f->esp + 8);
       int_ = *(int*) valid (f->esp + 4);
       f->eax = mmap (int_, buf_);
       break;
@@ -197,7 +197,7 @@ syscall_handler (struct intr_frame *f)
       unpin (f->esp + 4);
       break;
     case SYS_MMAP:
-      unpin (*(void**)(f->esp + 8));
+      //unpin (*(void**)(f->esp + 8)); //not needed
       unpin (f->esp + 8);
       unpin (f->esp + 4);
       break;
@@ -358,7 +358,7 @@ mmap (int fd, void* addr)
 
   struct file* file = (fd <= 2 || fd >= 128) ? NULL : thread_get_file (fd);
   off_t size = (file == NULL) ? 0 : file_length (file);
-  if (size == 0 || pg_ofs (addr) != 0 || addr == 0)
+  if (size == 0 || pg_ofs (addr) != 0 || addr == 0 || is_kernel_vaddr (addr))
   {
     sema_up (&pf_sema);
     return -1;
