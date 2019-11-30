@@ -204,7 +204,7 @@ process_exit (void)
 #endif
 
   /* closing all the files */
-  for (int i = 0; i < 128; i++)
+  for (int i = 0; i < MAX_FILE_CNT; i++)
   {
     if (cur->file_list [i] != NULL)
     {

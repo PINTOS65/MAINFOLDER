@@ -267,7 +267,7 @@ open (const char* file)
 static int
 filesize (int fd)
 {
-  if (fd < 3 || fd > 128)
+  if (fd < 3 || fd >= MAX_FILE_CNT)
     thread_exit ();
   struct file* file = thread_get_file (fd);
   return file_length (file);
@@ -282,7 +282,7 @@ read (int fd, void* buffer, unsigned size)
       input_getc();
     return size;
   }
-  else if (fd < 0 || fd == 1 || fd == 2 || fd > 128)
+  else if (fd < 0 || fd == 1 || fd == 2 || fd >= MAX_FILE_CNT)
     thread_exit ();
   struct file* file = thread_get_file (fd);
 
@@ -301,7 +301,7 @@ write (int fd, const void *buffer, unsigned size)
     putbuf (buffer, size);
     return size;
   }
-  else if (fd < 1 || fd == 2 || fd > 128)
+  else if (fd < 1 || fd == 2 || fd >= MAX_FILE_CNT)
     thread_exit ();
   struct file* file = thread_get_file (fd);
 
@@ -315,7 +315,7 @@ write (int fd, const void *buffer, unsigned size)
 static void
 seek (int fd, unsigned position)
 {
-  if (fd < 3 || fd > 128)
+  if (fd < 3 || fd >= MAX_FILE_CNT)
     thread_exit ();
 
   sema_down (&filesynch);
@@ -327,7 +327,7 @@ seek (int fd, unsigned position)
 static unsigned
 tell (int fd)
 {
-  if (fd < 3 || fd > 128)
+  if (fd < 3 || fd >= MAX_FILE_CNT)
     thread_exit ();
 
   sema_down (&filesynch);
@@ -341,7 +341,7 @@ tell (int fd)
 static void
 close (int fd)
 {
-  if (fd < 3 || fd > 128)
+  if (fd < 3 || fd >= MAX_FILE_CNT)
     thread_exit ();
 
   sema_down (&filesynch);
@@ -356,7 +356,7 @@ mmap (int fd, void* addr)
 {
   sema_down (&pf_sema);
 
-  struct file* file = (fd <= 2 || fd >= 128) ? NULL : thread_get_file (fd);
+  struct file* file = (fd <= 2 || fd >= MAX_FILE_CNT) ? NULL : thread_get_file (fd);
   off_t size = (file == NULL) ? 0 : file_length (file);
   if (size == 0 || pg_ofs (addr) != 0 || addr == 0 || is_kernel_vaddr (addr))
   {

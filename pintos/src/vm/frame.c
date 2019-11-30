@@ -43,7 +43,7 @@ ft_set (void* kpage, void* upage)
   ASSERT (is_kernel_vaddr (kpage) && is_user_vaddr (upage));
 
   lock_acquire (&ft_lock);
-  struct fte* fte = ft + (kpage - (void*) get_user_pool_base ()) / PGSIZE;
+  struct fte* fte = ft + (kpage - (void*) get_user_pool_base ()) / PGSIZE * sizeof (struct fte);
   fte->kpage = kpage;
   fte->pid = thread_tid ();
   fte->upage = upage;
@@ -58,7 +58,7 @@ ft_get (void* kpage)
   ASSERT (is_kernel_vaddr (kpage));
 
   lock_acquire (&ft_lock);
-  struct fte* fte = ft + (kpage - (void*) get_user_pool_base ()) / PGSIZE;
+  struct fte* fte = ft + (kpage - (void*) get_user_pool_base ()) / PGSIZE * sizeof (struct fte);
   void* result = fte->present ? fte->upage : NULL;
   lock_release (&ft_lock);
 
@@ -72,7 +72,7 @@ ft_remove (void* kpage)
   ASSERT (is_kernel_vaddr (kpage));
 
   lock_acquire (&ft_lock);
-  struct fte* fte = ft + (kpage - (void*) get_user_pool_base ()) / PGSIZE;
+  struct fte* fte = ft + (kpage - (void*) get_user_pool_base ()) / PGSIZE * sizeof (struct fte);
   void* result = fte->present ? fte->upage : NULL;
   fte->present = false;
   lock_release (&ft_lock);
@@ -87,7 +87,7 @@ ft_pin (void* kpage)
   ASSERT (is_kernel_vaddr (kpage));
 
   lock_acquire (&ft_lock);
-  struct fte* fte = ft + (kpage - (void*) get_user_pool_base ()) / PGSIZE;
+  struct fte* fte = ft + (kpage - (void*) get_user_pool_base ()) / PGSIZE * sizeof (struct fte);
   fte->pinned = true;
   lock_release (&ft_lock);
 }
@@ -99,7 +99,7 @@ ft_unpin (void* kpage)
   ASSERT (is_kernel_vaddr (kpage));
 
   lock_acquire (&ft_lock);
-  struct fte* fte = ft + (kpage - (void*) get_user_pool_base ()) / PGSIZE;
+  struct fte* fte = ft + (kpage - (void*) get_user_pool_base ()) / PGSIZE * sizeof (struct fte);
   fte->pinned = false;
   lock_release (&ft_lock);
 }
