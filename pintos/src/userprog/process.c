@@ -195,22 +195,27 @@ process_exit (void)
 
 #ifdef VM
   /* unmapping all the mappings */
-  for (int i = 0; i < MAX_MAP_CNT; i++)
+  if (cur->map_list != NULL)
   {
-    if (cur->map_list [i] != NULL)
-      munmap (i);
-    cur->map_list [i] = NULL;
+    for (int i = 0; i < MAX_MAP_CNT; i++)
+    {
+      if (cur->map_list [i] != NULL)
+        munmap (i);
+    }
+    palloc_free_page (cur->map_list);
   }
 #endif
 
   /* closing all the files */
-  for (int i = 0; i < MAX_FILE_CNT; i++)
+  if (cur->file_list != NULL)
   {
-    if (cur->file_list [i] != NULL)
+    for (int i = 0; i < MAX_FILE_CNT; i++)
     {
-      file_close (cur->file_list [i]);
+      if (cur->file_list [i] != NULL)
+        file_close (cur->file_list [i]);
+      cur->file_list [i] = NULL;
     }
-    cur->file_list [i] = NULL;
+    palloc_free_page (cur->file_list);
   }
 
   /* Destroy the current process's page directory and switch back
@@ -228,10 +233,11 @@ process_exit (void)
       cur->pagedir = NULL;
       pagedir_activate (NULL);
       pagedir_destroy (pd);
-#ifdef VM
-      spt_free_process (thread_tid ());
-#endif
     }
+
+#ifdef VM
+  spt_free_process (thread_tid ());
+#endif
 }
 
 /* Sets up the CPU for running user code in the current

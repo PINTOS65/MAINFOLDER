@@ -16,6 +16,7 @@ enum spte_flag
 
 void spt_init (void);
 void spt_set (void*, void*, enum spte_flag, bool);
+void spt_set_kernel (tid_t, void*, void*, enum spte_flag, bool);
 void* spt_get_ref (void*);
 void* spt_get_ref_kernel (tid_t, void*);
 enum spte_flag spt_get_flag (void*);
