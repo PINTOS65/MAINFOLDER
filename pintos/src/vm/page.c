@@ -34,11 +34,17 @@ spt_init (void)
 void
 spt_set (void* vaddr, void* ref, enum spte_flag flag, bool writable)
 {
+  spt_set_kernel (thread_tid (), vaddr, ref, flag, writable);
+}
+
+void
+spt_set_kernel (tid_t pid, void* vaddr, void* ref, enum spte_flag flag, bool writable)
+{
   ASSERT (pg_ofs (vaddr) == 0);
   ASSERT (vaddr != NULL);
   ASSERT (flag != SPTE_INVALID);
   struct spte* spte = malloc (sizeof *spte);
-  spte->pid = thread_tid ();
+  spte->pid = pid;
   spte->vaddr = vaddr;
   spte->ref = ref;
   spte->flag = flag;
@@ -46,6 +52,7 @@ spt_set (void* vaddr, void* ref, enum spte_flag flag, bool writable)
 
   lock_acquire (&spt_lock);
   hash_replace (&spt, &spte->elem);
+  //printf ("spt_set pid %d upage %#x ref %#x flag %d writable %d\n", spte->pid, (unsigned) vaddr, (unsigned) ref, flag, writable);
   lock_release (&spt_lock);
 }
 
@@ -144,7 +151,7 @@ void
 spt_free_process (tid_t pid)
 {
   struct spte* spte;
-  struct spte* entries[hash_size (&spt)];
+  struct spte** entries = (struct spte**) malloc (hash_size (&spt) * 4);
   int entries_cnt = 0;
 
   lock_acquire (&spt_lock);
@@ -179,6 +186,8 @@ spt_free_process (tid_t pid)
     free (entries[i]);
   }
   lock_release (&spt_lock);
+
+  free (entries);
 }
 
 void

@@ -133,7 +133,7 @@ syscall_handler (struct intr_frame *f)
       close (int_);
       break;
     case SYS_MMAP:
-      buf_ = valid (*(void**) valid (f->esp + 8));
+      buf_ = *(void**) valid (f->esp + 8);
       int_ = *(int*) valid (f->esp + 4);
       f->eax = mmap (int_, buf_);
       break;
@@ -197,7 +197,7 @@ syscall_handler (struct intr_frame *f)
       unpin (f->esp + 4);
       break;
     case SYS_MMAP:
-      unpin (*(void**)(f->esp + 8));
+      //unpin (*(void**)(f->esp + 8)); //not needed
       unpin (f->esp + 8);
       unpin (f->esp + 4);
       break;
@@ -267,7 +267,7 @@ open (const char* file)
 static int
 filesize (int fd)
 {
-  if (fd < 3 || fd > 128)
+  if (fd < 3 || fd >= MAX_FILE_CNT)
     thread_exit ();
   struct file* file = thread_get_file (fd);
   return file_length (file);
@@ -282,7 +282,7 @@ read (int fd, void* buffer, unsigned size)
       input_getc();
     return size;
   }
-  else if (fd < 0 || fd == 1 || fd == 2 || fd > 128)
+  else if (fd < 0 || fd == 1 || fd == 2 || fd >= MAX_FILE_CNT)
     thread_exit ();
   struct file* file = thread_get_file (fd);
 
@@ -301,7 +301,7 @@ write (int fd, const void *buffer, unsigned size)
     putbuf (buffer, size);
     return size;
   }
-  else if (fd < 1 || fd == 2 || fd > 128)
+  else if (fd < 1 || fd == 2 || fd >= MAX_FILE_CNT)
     thread_exit ();
   struct file* file = thread_get_file (fd);
 
@@ -315,7 +315,7 @@ write (int fd, const void *buffer, unsigned size)
 static void
 seek (int fd, unsigned position)
 {
-  if (fd < 3 || fd > 128)
+  if (fd < 3 || fd >= MAX_FILE_CNT)
     thread_exit ();
 
   sema_down (&filesynch);
@@ -327,7 +327,7 @@ seek (int fd, unsigned position)
 static unsigned
 tell (int fd)
 {
-  if (fd < 3 || fd > 128)
+  if (fd < 3 || fd >= MAX_FILE_CNT)
     thread_exit ();
 
   sema_down (&filesynch);
@@ -341,7 +341,7 @@ tell (int fd)
 static void
 close (int fd)
 {
-  if (fd < 3 || fd > 128)
+  if (fd < 3 || fd >= MAX_FILE_CNT)
     thread_exit ();
 
   sema_down (&filesynch);
@@ -356,9 +356,9 @@ mmap (int fd, void* addr)
 {
   sema_down (&pf_sema);
 
-  struct file* file = (fd <= 2 || fd >= 128) ? NULL : thread_get_file (fd);
+  struct file* file = (fd <= 2 || fd >= MAX_FILE_CNT) ? NULL : thread_get_file (fd);
   off_t size = (file == NULL) ? 0 : file_length (file);
-  if (size == 0 || pg_ofs (addr) != 0 || addr == 0)
+  if (size == 0 || pg_ofs (addr) != 0 || addr == 0 || is_kernel_vaddr (addr))
   {
     sema_up (&pf_sema);
     return -1;
@@ -376,6 +376,7 @@ mmap (int fd, void* addr)
     return -1;
   }
 
+  file = file_reopen (file);
   for (int i = 0; i < size; i = i + PGSIZE)
   {
     spt_set (addr + i, file, SPTE_FILE, true);
@@ -403,7 +404,7 @@ munmap (mapid_t mapping)
   }
 
   void* addr = map->upage;
-  struct file* file = thread_remove_file (map->fd);
+  struct file* file = thread_get_file (map->fd);
   off_t size = (file == NULL) ? 0 : file_length (file);
   free (map);
   if (size == 0)
@@ -421,7 +422,8 @@ munmap (mapid_t mapping)
       if (pagedir_is_dirty (pd, addr + i))
       {
         sema_down (&filesynch);
-        file_write_at (file, kpage, PGSIZE, spte_file_tell (addr + i));
+        size_t write_bytes = file_write_at (file, kpage, PGSIZE, spte_file_tell (addr + i));
+        if (write_bytes == 0) PANIC ("why writing back nothing????");
         sema_up (&filesynch);
       }
       pagedir_clear_page (pd, addr + i);

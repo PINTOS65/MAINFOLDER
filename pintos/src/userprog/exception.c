@@ -171,13 +171,14 @@ page_fault (struct intr_frame *f)
   enum spte_flag flag = spt_get_flag (fault_page);
   if (not_present && flag != SPTE_INVALID)
   {
+    uint32_t* pd = thread_current ()->pagedir;
     void* ref = spt_get_ref (fault_page);
     bool writable = spt_get_writable (fault_page);
     void* kpage = falloc_get_frame (0);
     if (kpage != NULL)
     {
-      bool success = pagedir_get_page (thread_current ()->pagedir, fault_page) == NULL
-		&& pagedir_set_page (thread_current ()->pagedir, fault_page, kpage, writable);
+      bool success = pagedir_get_page (pd, fault_page) == NULL
+		&& pagedir_set_page (pd, fault_page, kpage, writable);
       if (success)
       {
         size_t page_read_bytes;
@@ -207,6 +208,7 @@ page_fault (struct intr_frame *f)
         }
         ft_set (kpage, fault_page);
         if (!user) ft_pin (kpage);
+        //printf ("load pid %d upage %#x kpage %#x flag %d writable %d\n", thread_tid (), (unsigned) fault_page, (unsigned) kpage, flag, writable);
         sema_up (&pf_sema);
         return;
       }

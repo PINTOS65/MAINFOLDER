@@ -12,6 +12,7 @@
 #include "threads/vaddr.h" //addition
 #include "userprog/pagedir.h" //addition
 #include <string.h> //addition
+#include "lib/string.h" //addition
 #ifdef VM
 #include "vm/page.h" //addition
 #include "vm/frame.h" //addition
@@ -41,9 +42,11 @@ static mapid_t mmap (int, void*);
 static struct semaphore filesynch;
 static void* valid (void*);
 static void* valid_buf (void*, unsigned);
+static void* valid_str (char*);
 #ifdef VM
 static void unpin (void*);
 static void unpin_buf (void*, unsigned);
+static void unpin_str (char*);
 static void* esp;
 #endif
 
@@ -83,7 +86,7 @@ syscall_handler (struct intr_frame *f)
       f->eax = (uint32_t) int_;
       break;
     case SYS_EXEC:
-      str_ = valid (*(char**) valid (f->esp + 4));
+      str_ = valid_str (*(char**) valid (f->esp + 4));
       f->eax = (uint32_t) exec (str_);
       break;
     case SYS_WAIT:
@@ -92,15 +95,15 @@ syscall_handler (struct intr_frame *f)
       break;
     case SYS_CREATE:
       unsigned_ = *(unsigned*) valid (f->esp + 8);
-      str_ = valid (*(char**) valid (f->esp + 4));
+      str_ = valid_str (*(char**) valid (f->esp + 4));
       f->eax = (uint32_t) create (str_, unsigned_);
       break;
     case SYS_REMOVE:
-      str_ = valid (*(char**) valid (f->esp + 4));
+      str_ = valid_str (*(char**) valid (f->esp + 4));
       f->eax = (uint32_t) remove (str_);
       break;
     case SYS_OPEN:
-      str_ = valid (*(char**) valid (f->esp + 4));
+      str_ = valid_str (*(char**) valid (f->esp + 4));
       f->eax = (uint32_t) open (str_);
       break;
     case SYS_FILESIZE:
@@ -132,6 +135,7 @@ syscall_handler (struct intr_frame *f)
       int_ = *(int*) valid (f->esp + 4);
       close (int_);
       break;
+#ifdef VM
     case SYS_MMAP:
       buf_ = *(void**) valid (f->esp + 8);
       int_ = *(int*) valid (f->esp + 4);
@@ -141,6 +145,7 @@ syscall_handler (struct intr_frame *f)
       int_ = *(int*) valid (f->esp + 4);
       munmap (int_);
       break;
+#endif
   }
 
 #ifdef VM
@@ -152,7 +157,7 @@ syscall_handler (struct intr_frame *f)
       unpin (f->esp + 4);
       break;
     case SYS_EXEC:
-      unpin (*(void**)(f->esp + 4));
+      unpin_str (*(char**)(f->esp + 4));
       unpin (f->esp + 4);
       break;
     case SYS_WAIT:
@@ -160,15 +165,15 @@ syscall_handler (struct intr_frame *f)
       break;
     case SYS_CREATE:
       unpin (f->esp + 8);
-      unpin (*(void**)(f->esp + 4));
+      unpin_str (*(char**)(f->esp + 4));
       unpin (f->esp + 4);
       break;
     case SYS_REMOVE:
-      unpin (*(void**)(f->esp + 4));
+      unpin_str (*(char**)(f->esp + 4));
       unpin (f->esp + 4);
       break;
     case SYS_OPEN:
-      unpin (*(void**)(f->esp + 4));
+      unpin_str (*(char**)(f->esp + 4));
       unpin (f->esp + 4);
       break;
     case SYS_FILESIZE:
@@ -251,7 +256,7 @@ open (const char* file)
     return -1;
 
   sema_down (&filesynch);
-  struct file* fileptr = filesys_open(file);
+  struct file* fileptr = filesys_open (file);
   if (fileptr == NULL)
   {
     sema_up (&filesynch);
@@ -422,7 +427,8 @@ munmap (mapid_t mapping)
       if (pagedir_is_dirty (pd, addr + i))
       {
         sema_down (&filesynch);
-        file_write_at (file, kpage, PGSIZE, spte_file_tell (addr + i));
+        size_t write_bytes = file_write_at (file, kpage, PGSIZE, spte_file_tell (addr + i));
+        if (write_bytes == 0) PANIC ("why writing back nothing????");
         sema_up (&filesynch);
       }
       pagedir_clear_page (pd, addr + i);
@@ -454,13 +460,16 @@ valid (void* addr)
   if (addr == NULL) exit (-1);
   if (is_kernel_vaddr (addr + 3)) exit (-1);
 #ifdef VM
+  sema_down (&pf_sema);
   void* paddr1 = pagedir_get_page (pd, addr);
   void* paddr2 = pagedir_get_page (pd, addr + 3);
   if (paddr1 != NULL)
     ft_pin (pg_round_down (paddr1));
   if (paddr2 != NULL)
     ft_pin (pg_round_down (paddr2));
-  if (addr >= esp - 32 || addr >= PHYS_BASE - (1 << 23))
+  sema_up (&pf_sema);
+
+  if (addr >= esp - 32 && addr >= PHYS_BASE - (1 << 23))
     thread_current ()->saved_esp = esp;
   void* dummy1 UNUSED = *(void**)addr;
   void* dummy2 UNUSED = *(void**)(addr + 3);
@@ -489,22 +498,67 @@ valid_buf (void* buf, unsigned length)
   void* dummy UNUSED;
   for (unsigned i = 0; i < length; i++)
   {
+    sema_down (&pf_sema);
     paddr = pagedir_get_page (pd, buf + i);
     if (paddr != NULL)
       ft_pin (pg_round_down (paddr));
-    if (buf + i >= esp - 32 || buf + i >= PHYS_BASE - (1 << 23))
+    sema_up (&pf_sema);
+
+    if (buf + i >= esp - 32 && buf + i >= PHYS_BASE - (1 << 23))
       thread_current ()->saved_esp = esp;
     dummy = *(void**)(buf + i);
   }
 #else
   for (unsigned i = 0; i < length; i++)
   {
-    if (pagedir_get_page (pd, addr + i) == NULL)
+    if (pagedir_get_page (pd, buf + i) == NULL)
       exit (-1);
   }
 #endif
 
   return buf;
+}
+
+static void*
+valid_str (char* str)
+{
+  uint32_t* pd = thread_current ()->pagedir;
+  if (str == NULL) exit (-1);
+  unsigned i = 0;
+
+#ifdef VM
+  void* paddr;
+  char dummy;
+  while (true)
+  {
+    if (is_kernel_vaddr (str + i))
+      exit (-1);
+
+    sema_down (&pf_sema);
+    paddr = pagedir_get_page (pd, str + i);
+    if (paddr != NULL)
+      ft_pin (pg_round_down (paddr));
+    sema_up (&pf_sema);
+
+    if ((void*) str + i >= esp - 32 && (void*) str + i >= PHYS_BASE - (1 << 23))
+      thread_current ()->saved_esp = esp;
+    dummy = *(str + i);
+    if (dummy == '\0')
+      break;
+    i++;
+  }
+#else
+  while (true)
+  {
+    if (pagedir_get_page (pd, str + i) == NULL)
+      exit (-1);
+    if (*(str + i) == '\0')
+      break;
+    i++;
+  }
+#endif
+
+  return str;
 }
 
 #ifdef VM
@@ -530,5 +584,11 @@ unpin_buf (void* buf, unsigned length)
     if ((paddr = pagedir_get_page (pd, buf + i)) != NULL)
       ft_unpin (pg_round_down (paddr));
   }
+}
+
+static void
+unpin_str (char* str)
+{
+  return unpin_buf (str, strlen (str));
 }
 #endif

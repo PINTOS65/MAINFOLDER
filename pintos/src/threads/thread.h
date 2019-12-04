@@ -97,15 +97,6 @@ struct map
    blocked state is on a semaphore wait list. */
 struct thread
   {
-
-#ifdef USERPROG
-    struct file* file_list[MAX_FILE_CNT];/* (addition) file descriptor list */
-#endif
-
-#ifdef VM
-    struct map* map_list[MAX_MAP_CNT];	/* (addition) memory mapped files list */
-#endif
-
     /* Owned by thread.c. */
     tid_t tid;                          /* Thread identifier. */
     enum thread_status status;          /* Thread state. */
@@ -126,11 +117,13 @@ struct thread
     struct list_elem childelem;		/* (addition) list element for child_list */
     struct thread* parent;		/* (addition) parent thread */
     uint32_t *pagedir;			/* Page directory. */
+    struct file** file_list;		/* (addition) file descriptor list */
     int exit_status;			/* (addition) exit status */
     bool exec_status;			/* (addition) whether exec(child) is successful */
 #endif
 
 #ifdef VM
+    struct map** map_list;		/* (addition) memory mapped files list */
     void* saved_esp;			/* (addition) saved esp */
 #endif
 

@@ -453,6 +453,15 @@ static bool
 is_thread (struct thread *t)
 {
   return t != NULL && t->magic == THREAD_MAGIC;
+/*
+  if (t == NULL) return false;
+  if (t->magic != THREAD_MAGIC)
+  {
+    hex_dump ((uintptr_t) &t->magic - 100, &t->magic - 100, (size_t) 200, true);
+    return false;
+  }
+  return true;
+*/
 }
 
 /* Does basic initialization of T as a blocked thread named
@@ -479,14 +488,9 @@ init_thread (struct thread *t, const char *name, int priority)
   sema_init (&t->exec_sema, 0); //addition
   sema_init (&t->wait_sema, 0); //addition
   sema_init (&t->exit_sema, 0); //addition
-
-  /* init file list */ 
-  for (int fd = 3; fd < MAX_FILE_CNT; fd++)
-    t->file_list[fd] = NULL;
+  t->file_list = NULL; //addition
 #ifdef VM
-  /* init map list */
-  for (int mapid = 0; mapid < MAX_MAP_CNT; mapid++)
-    t->map_list[mapid] = NULL;
+  t->map_list = NULL; //addition
 #endif
     
   old_level = intr_disable ();
@@ -613,6 +617,14 @@ int
 thread_push_file (struct file* file)
 {
   ASSERT (file != NULL);
+
+  if (thread_current ()->file_list == NULL)
+  {
+    thread_current ()->file_list = (struct file**) palloc_get_page (PAL_ZERO);
+    thread_current ()->file_list[3] = file;
+    return 3;
+  }
+
   struct file** file_list = thread_current ()->file_list;
 
   for (int i = 3; i < MAX_FILE_CNT; i++)
@@ -631,9 +643,10 @@ thread_remove_file (int fd)
 {
   ASSERT (fd > 2 && fd < MAX_FILE_CNT);
 
-  struct file** file_list = thread_current() -> file_list; 
-  struct file* file = file_list[fd];
+  struct file** file_list = thread_current() -> file_list;
+  if (file_list == NULL) return NULL;
 
+  struct file* file = file_list[fd];
   file_list[fd] = NULL;
   return file;
 }
@@ -644,6 +657,8 @@ thread_get_file (int fd)
   ASSERT (fd > 2 && fd < MAX_FILE_CNT);
 
   struct file** file_list = thread_current() -> file_list;
+  if (file_list == NULL) return NULL;
+
   return file_list[fd];
 }
 
@@ -663,6 +678,13 @@ thread_from_tid (tid_t tid)
 mapid_t
 thread_push_map (struct map* map)
 {
+  if (thread_current ()->map_list == NULL)
+  {
+    thread_current ()->map_list = (struct map**) palloc_get_page (PAL_ZERO);
+    thread_current ()->map_list[0] = map;
+    return 0;
+  }
+
   struct map** map_list = thread_current ()->map_list;
 
   for (int i = 0; i < MAX_MAP_CNT; i++)
@@ -682,10 +704,10 @@ thread_remove_map (mapid_t id)
   ASSERT (id >= 0 && id < MAX_MAP_CNT);
 
   struct map** map_list = thread_current ()->map_list;
+  if (map_list == NULL) return NULL;
+
   struct map* map = map_list[id];
-  
   map_list[id] = NULL;
-  
   return map;
 }
 
@@ -695,9 +717,9 @@ thread_get_map (mapid_t id)
   ASSERT (id >= 0 && id < MAX_MAP_CNT);
 
   struct map** map_list = thread_current ()->map_list;
-  struct map* map = map_list[id];
+  if (map_list == NULL) return NULL;
 
-  return map;
+  return map_list[id];
 }
 
 #endif
