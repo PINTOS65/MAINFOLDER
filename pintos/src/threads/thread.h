@@ -103,6 +103,7 @@ struct thread
     char name[16];                      /* Name (for debugging purposes). */
     uint8_t *stack;                     /* Saved stack pointer. */
     int priority;                       /* Priority. */
+    int64_t alarm_ticks;		/* (addition) when should I awake it? */
     struct list_elem allelem;           /* List element for all threads list. */
 
     /* Shared between thread.c and synch.c. */
@@ -146,7 +147,9 @@ typedef void thread_func (void *aux);
 tid_t thread_create (const char *name, int priority, thread_func *, void *);
 
 void thread_block (void);
+void thread_sleep (void); //addition for alarm clock
 void thread_unblock (struct thread *);
+void thread_awake (void); //addition for alarm clock
 
 struct thread *thread_current (void);
 tid_t thread_tid (void);
@@ -168,9 +171,11 @@ int thread_get_recent_cpu (void);
 int thread_get_load_avg (void);
 
 /* addition (project 2) */
+#ifdef USERPROG
 int thread_push_file (struct file*);
 struct file* thread_remove_file (int);
 struct file* thread_get_file (int);
+#endif
 
 /* addition (project 3) */
 struct thread* thread_from_tid (tid_t);
@@ -180,5 +185,9 @@ mapid_t thread_push_map (struct map*);
 struct map* thread_remove_map (mapid_t);
 struct map* thread_get_map (mapid_t);
 #endif
+
+/* addition (project 4) */
+bool is_sleep_list_empty (void);
+struct thread* thread_slept_first (void);
 
 #endif /* threads/thread.h */
