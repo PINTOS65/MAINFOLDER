@@ -550,6 +550,8 @@ valid_str (char* str)
 #else
   while (true)
   {
+    if (is_kernel_vaddr (str + i))
+      exit (-1);
     if (pagedir_get_page (pd, str + i) == NULL)
       exit (-1);
     if (*(str + i) == '\0')

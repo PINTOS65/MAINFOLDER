@@ -5,6 +5,9 @@
 #include <string.h>
 #include "filesys/filesys.h"
 #include "filesys/free-map.h"
+#ifdef FILESYS
+#include "filesys/cache.h" //addition
+#endif
 #include "threads/malloc.h"
 
 /* Identifies an inode. */
@@ -89,14 +92,22 @@ inode_create (block_sector_t sector, off_t length)
       disk_inode->magic = INODE_MAGIC;
       if (free_map_allocate (sectors, &disk_inode->start)) 
         {
+#ifdef FILESYS
+          cache_write (sector, disk_inode);
+#else
           block_write (fs_device, sector, disk_inode);
+#endif
           if (sectors > 0) 
             {
               static char zeros[BLOCK_SECTOR_SIZE];
               size_t i;
               
               for (i = 0; i < sectors; i++) 
+#ifdef FILESYS
+                cache_write (disk_inode->start + i, zeros);
+#else
                 block_write (fs_device, disk_inode->start + i, zeros);
+#endif
             }
           success = true; 
         } 
@@ -137,7 +148,11 @@ inode_open (block_sector_t sector)
   inode->open_cnt = 1;
   inode->deny_write_cnt = 0;
   inode->removed = false;
+#ifdef FILESYS
+  cache_read (inode->sector, &inode->data);
+#else
   block_read (fs_device, inode->sector, &inode->data);
+#endif
   return inode;
 }
 
@@ -202,7 +217,10 @@ inode_read_at (struct inode *inode, void *buffer_, off_t size, off_t offset)
 {
   uint8_t *buffer = buffer_;
   off_t bytes_read = 0;
+#ifdef FILESYS
+#else
   uint8_t *bounce = NULL;
+#endif
 
   while (size > 0) 
     {
@@ -223,12 +241,19 @@ inode_read_at (struct inode *inode, void *buffer_, off_t size, off_t offset)
       if (sector_ofs == 0 && chunk_size == BLOCK_SECTOR_SIZE)
         {
           /* Read full sector directly into caller's buffer. */
+#ifdef FILESYS
+          cache_read (sector_idx, buffer + bytes_read);
+#else
           block_read (fs_device, sector_idx, buffer + bytes_read);
+#endif
         }
       else 
         {
           /* Read sector into bounce buffer, then partially copy
              into caller's buffer. */
+#ifdef FILESYS
+          cache_read_at (sector_idx, buffer + bytes_read, chunk_size, sector_ofs);
+#else
           if (bounce == NULL) 
             {
               bounce = malloc (BLOCK_SECTOR_SIZE);
@@ -237,6 +262,7 @@ inode_read_at (struct inode *inode, void *buffer_, off_t size, off_t offset)
             }
           block_read (fs_device, sector_idx, bounce);
           memcpy (buffer + bytes_read, bounce + sector_ofs, chunk_size);
+#endif
         }
       
       /* Advance. */
@@ -244,7 +270,10 @@ inode_read_at (struct inode *inode, void *buffer_, off_t size, off_t offset)
       offset += chunk_size;
       bytes_read += chunk_size;
     }
+#ifdef FILESYS
+#else
   free (bounce);
+#endif
 
   return bytes_read;
 }
@@ -260,7 +289,10 @@ inode_write_at (struct inode *inode, const void *buffer_, off_t size,
 {
   const uint8_t *buffer = buffer_;
   off_t bytes_written = 0;
+#ifdef FILESYS
+#else
   uint8_t *bounce = NULL;
+#endif
 
   if (inode->deny_write_cnt)
     return 0;
@@ -284,10 +316,17 @@ inode_write_at (struct inode *inode, const void *buffer_, off_t size,
       if (sector_ofs == 0 && chunk_size == BLOCK_SECTOR_SIZE)
         {
           /* Write full sector directly to disk. */
+#ifdef FILESYS
+          cache_write (sector_idx, buffer + bytes_written);
+#else
           block_write (fs_device, sector_idx, buffer + bytes_written);
+#endif
         }
       else 
         {
+#ifdef FILESYS
+          cache_write_at (sector_idx, buffer + bytes_written, chunk_size, sector_ofs);
+#else
           /* We need a bounce buffer. */
           if (bounce == NULL) 
             {
@@ -305,6 +344,7 @@ inode_write_at (struct inode *inode, const void *buffer_, off_t size,
             memset (bounce, 0, BLOCK_SECTOR_SIZE);
           memcpy (bounce + sector_ofs, buffer + bytes_written, chunk_size);
           block_write (fs_device, sector_idx, bounce);
+#endif
         }
 
       /* Advance. */
@@ -312,7 +352,10 @@ inode_write_at (struct inode *inode, const void *buffer_, off_t size,
       offset += chunk_size;
       bytes_written += chunk_size;
     }
+#ifdef FILESYS
+#else
   free (bounce);
+#endif
 
   return bytes_written;
 }
