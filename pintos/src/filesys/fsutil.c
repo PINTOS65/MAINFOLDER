@@ -7,9 +7,7 @@
 #include "filesys/directory.h"
 #include "filesys/file.h"
 #include "filesys/filesys.h"
-#ifdef FILESYS
 #include "filesys/cache.h" //addition
-#endif
 #include "threads/malloc.h"
 #include "threads/palloc.h"
 #include "threads/vaddr.h"

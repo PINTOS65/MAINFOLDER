@@ -5,6 +5,7 @@
 #include "filesys/filesys.h"
 #include "filesys/inode.h"
 #include "threads/malloc.h"
+#include "threads/synch.h" //addition
 
 /* A directory. */
 struct dir 
@@ -17,6 +18,7 @@ struct dir
 struct dir_entry 
   {
     block_sector_t inode_sector;        /* Sector number of header. */
+    bool is_dir;			/* (addition) directory or file? */
     char name[NAME_MAX + 1];            /* Null terminated file name. */
     bool in_use;                        /* In use or free? */
   };
@@ -172,7 +174,15 @@ dir_add (struct dir *dir, const char *name, block_sector_t inode_sector)
   e.in_use = true;
   strlcpy (e.name, name, sizeof e.name);
   e.inode_sector = inode_sector;
-  success = inode_write_at (dir->inode, &e, sizeof e, ofs) == sizeof e;
+  success = (inode_write_at (dir->inode, &e, sizeof e, ofs) == sizeof e);
+
+  /* (addition) setting the child's parent */
+  if (success && !inode_set_parent (inode_sector, inode_get_inumber (dir->inode)))
+  {
+    e.in_use = false;
+    inode_write_at (dir->inode, &e, sizeof e, ofs);
+    success = false;
+  }
 
  done:
   return success;
@@ -221,6 +231,14 @@ dir_remove (struct dir *dir, const char *name)
 bool
 dir_readdir (struct dir *dir, char name[NAME_MAX + 1])
 {
+  bool locked = false;
+  struct lock* lock = inode_dir_lock (dir->inode);
+  if (lock != NULL && !lock_held_by_current_thread (lock))
+  {
+    lock_acquire (lock);
+    locked = true;
+  }
+
   struct dir_entry e;
 
   while (inode_read_at (dir->inode, &e, sizeof e, dir->pos) == sizeof e) 
@@ -229,8 +247,92 @@ dir_readdir (struct dir *dir, char name[NAME_MAX + 1])
       if (e.in_use)
         {
           strlcpy (name, e.name, NAME_MAX + 1);
+          if (locked) lock_release (lock);
           return true;
         } 
     }
+  if (locked) lock_release (lock);
   return false;
+}
+
+/* (addition) gets directory entry's name */
+void
+dir_get_entry_name (struct dir* parent, block_sector_t child, char** name)
+{
+  struct dir_entry e;
+  size_t ofs;
+
+  ASSERT (parent != NULL);
+
+  for (ofs = 0; inode_read_at (parent->inode, &e, sizeof e, ofs) == sizeof e; ofs += sizeof e)
+  {
+    if (e.in_use && child == e.inode_sector)
+    {
+      *name = e.name;
+      return;
+    }
+  }
+  PANIC ("dir_get_entry_name FAIL: no such entry with the sector %d in dir %d", child, inode_get_inumber (parent->inode));
+}
+
+/* (addition) gets directory entry's is_dir */
+bool
+dir_entry_is_dir (struct dir* parent, block_sector_t child)
+{
+  struct dir_entry e;
+  size_t ofs;
+
+  ASSERT (parent != NULL);
+
+  for (ofs = 0; inode_read_at (parent->inode, &e, sizeof e, ofs) == sizeof e; ofs += sizeof e)
+  {
+    if (e.in_use && child == e.inode_sector)
+    {
+      return e.is_dir;
+    }
+  }
+  PANIC ("dir_entry_is_dir FAIL: no such entry with the sector %d in dir %d", child, inode_get_inumber (parent->inode));
+  return false;
+}
+
+/* (addition) sets directory entry's is_dir = TRUE */
+void
+dir_entry_set_dir (struct dir* parent, block_sector_t child)
+{
+  struct dir_entry e;
+  size_t ofs;
+
+  ASSERT (parent != NULL);
+
+  for (ofs = 0; inode_read_at (parent->inode, &e, sizeof e, ofs) == sizeof e; ofs += sizeof e)
+  {
+    if (e.in_use && child == e.inode_sector)
+    {
+      e.is_dir = true;
+      inode_write_at (parent->inode, &e, sizeof e, ofs);
+      return;
+    }
+  }
+  PANIC ("dir_entry_set_dir FAIL: no such entry with the sector %d in dir %d", child, inode_get_inumber (parent->inode));
+}
+
+/* (addition) sets directory entry's is_dir = FALSE */
+void
+dir_entry_clear_dir (struct dir* parent, block_sector_t child)
+{
+  struct dir_entry e;
+  size_t ofs;
+
+  ASSERT (parent != NULL);
+
+  for (ofs = 0; inode_read_at (parent->inode, &e, sizeof e, ofs) == sizeof e; ofs += sizeof e)
+  {
+    if (e.in_use && child == e.inode_sector)
+    {
+      e.is_dir = false;
+      inode_write_at (parent->inode, &e, sizeof e, ofs);
+      return;
+    }
+  }
+  PANIC ("dir_entry_clear_dir FAIL: no such entry with the sector %d in dir %d", child, inode_get_inumber (parent->inode));
 }

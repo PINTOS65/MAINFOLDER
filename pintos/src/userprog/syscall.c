@@ -19,6 +19,10 @@
 #include "vm/swap.h" //addition
 #include "threads/malloc.h" //addition
 #endif
+#ifdef FILESYS
+#include "filesys/free-map.h" //addition
+#include "filesys/inode.h" //addition
+#endif
 
 static void syscall_handler (struct intr_frame *);
 
@@ -37,6 +41,13 @@ static void close (int);
 #ifdef VM
 static mapid_t mmap (int, void*);
 //static void munmap (mapid_t); //declared in the header already
+#endif
+#ifdef FILESYS
+static bool chdir (const char*);
+static bool mkdir (const char*);
+static bool readdir (int, char*);
+static bool isdir (int);
+static int inumber (int);
 #endif
 
 static struct semaphore filesynch;
@@ -146,6 +157,29 @@ syscall_handler (struct intr_frame *f)
       munmap (int_);
       break;
 #endif
+#ifdef FILESYS
+    case SYS_CHDIR:
+      str_ = valid_str (*(char**) valid (f->esp + 4));
+      f->eax = chdir (str_);
+      break;
+    case SYS_MKDIR:
+      str_ = valid_str (*(char**) valid (f->esp + 4));
+      f->eax = mkdir (str_);
+      break;
+    case SYS_READDIR:
+      str_ = valid_str (*(char**) valid (f->esp + 8));
+      int_ = *(int*) valid (f->esp + 4);
+      f->eax = readdir (int_, str_);
+      break;
+    case SYS_ISDIR:
+      int_ = *(int*) valid (f->esp + 4);
+      f->eax = isdir (int_);
+      break;
+    case SYS_INUMBER:
+      int_ = *(int*) valid (f->esp + 4);
+      f->eax = inumber (int_);
+      break;
+#endif
   }
 
 #ifdef VM
@@ -209,6 +243,27 @@ syscall_handler (struct intr_frame *f)
     case SYS_MUNMAP:
       unpin (f->esp + 4);
       break;
+#ifdef FILESYS
+    case SYS_CHDIR:
+      unpin_str (*(char**)(f->esp + 4));
+      unpin (f->esp + 4);
+      break;
+    case SYS_MKDIR:
+      unpin_str (*(char**)(f->esp + 4));
+      unpin (f->esp + 4);
+      break;
+    case SYS_READDIR:
+      unpin_str (*(char**)(f->esp + 8));
+      unpin (f->esp + 8);
+      unpin (f->esp + 4);
+      break;
+    case SYS_ISDIR:
+      unpin (f->esp + 4);
+      break;
+    case SYS_INUMBER:
+      unpin (f->esp + 4);
+      break;
+#endif
   }
   unpin (f->esp);
 #endif
@@ -256,14 +311,32 @@ open (const char* file)
     return -1;
 
   sema_down (&filesynch);
-  struct file* fileptr = filesys_open (file);
+#ifdef FILESYS
+  bool is_dir;
+  void* fileptr = filesys_open_with_is_dir (file, &is_dir);
+#else
+  void* fileptr = filesys_open (file);
+#endif
   if (fileptr == NULL)
   {
     sema_up (&filesynch);
     return -1;
   }
+#ifdef FILESYS
+  int result = thread_push_file (fileptr);
+  if (is_dir)
+  {
+    thread_fd_set_dir (result);
+  }
+  else
+  {
+    if (strcmp (thread_name (), file) == 0) file_deny_write (fileptr);
+    thread_fd_clear_dir (result);
+  }
+#else
   if (strcmp (thread_name (), file) == 0) file_deny_write (fileptr);
   int result = thread_push_file (fileptr);
+#endif
   sema_up (&filesynch);
 
   return result;
@@ -274,6 +347,9 @@ filesize (int fd)
 {
   if (fd < 3 || fd >= MAX_FILE_CNT)
     thread_exit ();
+#ifdef FILESYS
+  ASSERT (!thread_fd_is_dir (fd));
+#endif
   struct file* file = thread_get_file (fd);
   return file_length (file);
 }
@@ -289,12 +365,11 @@ read (int fd, void* buffer, unsigned size)
   }
   else if (fd < 0 || fd == 1 || fd == 2 || fd >= MAX_FILE_CNT)
     thread_exit ();
+#ifdef FILESYS
+  if (thread_fd_is_dir (fd)) thread_exit ();
+#endif
   struct file* file = thread_get_file (fd);
-
-  sema_down (&filesynch);
   int result = file_read (file, buffer, (off_t) size);
-  sema_up (&filesynch);
-
   return result;
 }
 
@@ -308,12 +383,11 @@ write (int fd, const void *buffer, unsigned size)
   }
   else if (fd < 1 || fd == 2 || fd >= MAX_FILE_CNT)
     thread_exit ();
+#ifdef FILESYS
+  if (thread_fd_is_dir (fd)) thread_exit ();
+#endif
   struct file* file = thread_get_file (fd);
-
-  sema_down (&filesynch);
   int result = file_write (file, buffer, (off_t) size);
-  sema_up (&filesynch);
-
   return result;
 }
 
@@ -323,6 +397,10 @@ seek (int fd, unsigned position)
   if (fd < 3 || fd >= MAX_FILE_CNT)
     thread_exit ();
 
+#ifdef FILESYS
+  ASSERT (!thread_fd_is_dir (fd));
+#endif
+ 
   sema_down (&filesynch);
   struct file* file = thread_get_file (fd);
   file_seek (file, (off_t) position);
@@ -335,6 +413,10 @@ tell (int fd)
   if (fd < 3 || fd >= MAX_FILE_CNT)
     thread_exit ();
 
+#ifdef FILESYS
+  ASSERT (!thread_fd_is_dir (fd));
+#endif
+ 
   sema_down (&filesynch);
   struct file* file = thread_get_file (fd);
   unsigned result = file_tell (file);
@@ -350,8 +432,16 @@ close (int fd)
     thread_exit ();
 
   sema_down (&filesynch);
-  struct file* file = thread_remove_file (fd);
-  file_close (file);
+  void* file = thread_remove_file (fd);
+  if (file != NULL)
+  {
+#ifdef FILESYS
+    if (thread_fd_is_dir (fd)) dir_close (file);
+    else file_close (file);
+#else
+    file_close (file);
+#endif
+  }
   sema_up (&filesynch);
 }
 
@@ -359,6 +449,10 @@ close (int fd)
 static mapid_t
 mmap (int fd, void* addr)
 {
+#ifdef FILESYS
+  ASSERT (!thread_fd_is_dir (fd));
+#endif
+
   sema_down (&pf_sema);
 
   struct file* file = (fd <= 2 || fd >= MAX_FILE_CNT) ? NULL : thread_get_file (fd);
@@ -450,6 +544,96 @@ munmap (mapid_t mapping)
   }
 
   sema_up (&pf_sema);
+}
+#endif
+
+#ifdef FILESYS
+static bool
+chdir (const char* name)
+{
+  struct inode* inode = NULL;
+
+  struct dir* dir;
+  bool dummy;
+  char parsed_name[NAME_MAX + 1];
+
+  bool success = (filesys_parse (name, &dir, parsed_name, &dummy) && dir != NULL);
+
+  struct lock* lock = (dir == NULL) ? NULL : inode_dir_lock (dir_get_inode (dir));
+  if (lock != NULL) lock_acquire (lock);
+
+  if (success)
+  {
+    if (strlen (parsed_name) == 0)
+      thread_current ()->cur_dir = ROOT_DIR_SECTOR;
+    else
+    {
+      if (!dir_lookup (dir, parsed_name, &inode))
+        success = false;
+      if (success)
+        thread_current ()->cur_dir = inode_get_inumber (inode);
+    }
+  }
+
+  inode_close (inode);
+  dir_close (dir);
+
+  if (lock != NULL) lock_release (lock);
+  return success;
+}
+
+static bool
+mkdir (const char* name)
+{
+  block_sector_t inode_sector = 0;
+
+  struct dir* dir = NULL;
+  bool dummy;
+  char parsed_name[NAME_MAX + 1];
+
+  bool success = (filesys_parse (name, &dir, parsed_name, &dummy) &&
+			dir != NULL &&
+                        strlen (parsed_name) > 0 &&
+			free_map_allocate (1, &inode_sector) &&
+			inode_create (inode_sector, 0));
+
+  struct lock* lock = (dir == NULL) ? NULL : inode_dir_lock (dir_get_inode (dir));
+  if (lock != NULL) lock_acquire (lock);
+
+  success = success && dir_add (dir, parsed_name, inode_sector);
+
+  if (success) dir_entry_set_dir (dir, inode_sector);
+
+  if (!success && inode_sector != 0)
+    free_map_release (inode_sector, 1);
+  dir_close (dir);
+
+  if (lock != NULL) lock_release (lock);
+  return success;
+}
+
+static bool
+readdir (int fd, char* name)
+{
+  if (!thread_fd_is_dir (fd)) return false;
+  struct dir* dir = (struct dir*) thread_get_file (fd);
+  return dir_readdir (dir, name);
+}
+
+static bool
+isdir (int fd)
+{
+  ASSERT (thread_get_file (fd) != NULL);
+  return thread_fd_is_dir (fd);
+}
+
+static int
+inumber (int fd)
+{
+  ASSERT (thread_get_file (fd) != NULL);
+  return thread_fd_is_dir (fd) ?
+		inode_get_inumber (dir_get_inode ((struct dir*) thread_get_file (fd))) :
+		inode_get_inumber (file_get_inode ((struct file*) thread_get_file (fd)));
 }
 #endif
 
