@@ -14,6 +14,9 @@
 #ifdef USERPROG
 #include "userprog/process.h"
 #endif
+#ifdef FILESYS
+#include "filesys/filesys.h" //addition
+#endif
 
 int counter = 0; // counter for fd allocation
 
@@ -193,6 +196,9 @@ thread_create (const char *name, int priority,
 #ifdef USERPROG
   t->parent = thread_current ();
   list_push_back (&t->parent->child_list, &t->childelem);
+#ifdef FILESYS
+  t->cur_dir = thread_current ()->cur_dir;
+#endif
 #endif
 
   /* Stack frame for kernel_thread(). */
@@ -536,6 +542,9 @@ init_thread (struct thread *t, const char *name, int priority)
 #ifdef VM
   t->map_list = NULL; //addition
 #endif
+#ifdef FILESYS
+  t->cur_dir = ROOT_DIR_SECTOR;
+#endif
     
   old_level = intr_disable ();
   list_push_back (&all_list, &t->allelem);
@@ -660,18 +669,18 @@ uint32_t thread_stack_ofs = offsetof (struct thread, stack);
 
 /* (addition) push file to file_list */
 int
-thread_push_file (struct file* file)
+thread_push_file (void* file)
 {
   ASSERT (file != NULL);
 
   if (thread_current ()->file_list == NULL)
   {
-    thread_current ()->file_list = (struct file**) palloc_get_page (PAL_ZERO);
+    thread_current ()->file_list = palloc_get_page (PAL_ZERO);
     thread_current ()->file_list[3] = file;
     return 3;
   }
 
-  struct file** file_list = thread_current ()->file_list;
+  void** file_list = thread_current ()->file_list;
 
   for (int i = 3; i < MAX_FILE_CNT; i++)
   {
@@ -684,12 +693,12 @@ thread_push_file (struct file* file)
   return -1;
 }
 
-struct file*
+void*
 thread_remove_file (int fd)
 {
   ASSERT (fd > 2 && fd < MAX_FILE_CNT);
 
-  struct file** file_list = thread_current() -> file_list;
+  void** file_list = thread_current() -> file_list;
   if (file_list == NULL) return NULL;
 
   struct file* file = file_list[fd];
@@ -697,12 +706,12 @@ thread_remove_file (int fd)
   return file;
 }
 
-struct file*
+void*
 thread_get_file (int fd)
 {
   ASSERT (fd > 2 && fd < MAX_FILE_CNT);
 
-  struct file** file_list = thread_current() -> file_list;
+  void** file_list = thread_current() -> file_list;
   if (file_list == NULL) return NULL;
 
   return file_list[fd];
@@ -794,3 +803,35 @@ thread_slept_first (void)
 
   return list_entry (list_front (&sleep_list), struct thread, elem);
 }
+
+/* addition for file and directory */
+#ifdef FILESYS
+bool
+thread_fd_is_dir (int fd)
+{
+  return thread_current ()->is_dir_list[fd];
+}
+
+void
+thread_fd_clear_dir (int fd)
+{
+  thread_current ()->is_dir_list[fd] = false;
+}
+
+void
+thread_fd_set_dir (int fd)
+{
+  thread_current ()->is_dir_list[fd] = true;
+}
+
+bool
+thread_on_dir (uint32_t sector)
+{
+  for (struct list_elem* e = list_front (&all_list); e != list_end (&all_list); e = list_next (e))
+  {
+    if (list_entry (e, struct thread, allelem)->cur_dir == sector)
+      return true;
+  }
+  return false;
+}
+#endif

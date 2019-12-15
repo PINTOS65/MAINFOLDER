@@ -42,6 +42,7 @@ process_execute (const char *file_name)
   fn_copy = palloc_get_page (0);
   if (fn_copy == NULL)
     return TID_ERROR;
+
   strlcpy (fn_copy, file_name, PGSIZE);
 
   char* fn_copy2 = palloc_get_page (0);
@@ -212,7 +213,14 @@ process_exit (void)
     for (int i = 0; i < MAX_FILE_CNT; i++)
     {
       if (cur->file_list [i] != NULL)
+      {
+#ifdef FILESYS
+        if (cur->is_dir_list [i]) dir_close (cur->file_list [i]);
+        else file_close (cur->file_list [i]);
+#else
         file_close (cur->file_list [i]);
+#endif
+      }
       cur->file_list [i] = NULL;
     }
     palloc_free_page (cur->file_list);

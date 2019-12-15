@@ -118,7 +118,7 @@ struct thread
     struct list_elem childelem;		/* (addition) list element for child_list */
     struct thread* parent;		/* (addition) parent thread */
     uint32_t *pagedir;			/* Page directory. */
-    struct file** file_list;		/* (addition) file descriptor list */
+    void** file_list;			/* (addition) file descriptor list */
     int exit_status;			/* (addition) exit status */
     bool exec_status;			/* (addition) whether exec(child) is successful */
 #endif
@@ -126,6 +126,11 @@ struct thread
 #ifdef VM
     struct map** map_list;		/* (addition) memory mapped files list */
     void* saved_esp;			/* (addition) saved esp */
+#endif
+
+#ifdef FILESYS
+    bool is_dir_list[MAX_FILE_CNT];	/* (addition) is_dir list */
+    uint32_t cur_dir;			/* (addition) current directory */
 #endif
 
     /* Owned by thread.c. */
@@ -172,9 +177,9 @@ int thread_get_load_avg (void);
 
 /* addition (project 2) */
 #ifdef USERPROG
-int thread_push_file (struct file*);
-struct file* thread_remove_file (int);
-struct file* thread_get_file (int);
+int thread_push_file (void*);
+void* thread_remove_file (int);
+void* thread_get_file (int);
 #endif
 
 /* addition (project 3) */
@@ -189,5 +194,11 @@ struct map* thread_get_map (mapid_t);
 /* addition (project 4) */
 bool is_sleep_list_empty (void);
 struct thread* thread_slept_first (void);
+#ifdef FILESYS
+bool thread_fd_is_dir (int);
+void thread_fd_set_dir (int);
+void thread_fd_clear_dir (int);
+bool thread_on_dir (uint32_t);
+#endif
 
 #endif /* threads/thread.h */

@@ -52,21 +52,17 @@ filesys_create (const char *name, off_t initial_size)
   block_sector_t inode_sector = 0;
   //struct dir *dir = dir_open_root ();
 
-  struct dir* dir = NULL;
+  struct dir* dir;
   bool is_dir;
   char parsed_name[NAME_MAX + 1];
 
   bool success = (filesys_parse (name, &dir, parsed_name, &is_dir) &&
 			dir != NULL &&
-                        strlen (parsed_name) > 0 &&
 			!is_dir &&
 			free_map_allocate (1, &inode_sector) &&
-			inode_create (inode_sector, initial_size));
+			inode_create (inode_sector, initial_size) &&
+			dir_add (dir, parsed_name, inode_sector));
 
-  struct lock* lock = (dir == NULL) ? NULL : inode_dir_lock (dir_get_inode (dir));
-  if (lock != NULL) lock_acquire (lock);
-
-  success = success && dir_add (dir, parsed_name, inode_sector);
   if (success) dir_entry_clear_dir (dir, inode_sector);
 
 /*
@@ -78,8 +74,6 @@ filesys_create (const char *name, off_t initial_size)
   if (!success && inode_sector != 0) 
     free_map_release (inode_sector, 1);
   dir_close (dir);
-
-  if (lock != NULL) lock_release (lock);
 
   return success;
 }
@@ -103,37 +97,23 @@ filesys_open_with_is_dir (const char *name, bool* is_dir)
   struct inode *inode = NULL;
 
   bool dummy;
-  struct dir* dir = NULL;
+  struct dir* dir;
   char parsed_name[NAME_MAX + 1];
 
   if (filesys_parse (name, &dir, parsed_name, &dummy) && dir != NULL)
   {
     if (strlen (parsed_name) == 0) return dir;
-
-    struct lock* lock = (dir == NULL) ? NULL : inode_dir_lock (dir_get_inode (dir));
-    if (lock != NULL) lock_acquire (lock);
-
     if (dir_lookup (dir, parsed_name, &inode))
       *is_dir = dir_entry_is_dir (dir, inode_get_inumber (inode));
     dir_close (dir);
+    if (inode == NULL) printf("inode is NULL");
+    printf("%d", !*is_dir &&dummy);
     if (inode == NULL || (!*is_dir && dummy))
-    {
-      inode_close (inode);
-      if (lock != NULL) lock_release (lock);
       return NULL;
-    }
     else if (*is_dir)
-    {
-      if (lock != NULL) lock_release (lock);
       return dir_open (inode);
-    }
     else
-    {
-      if (lock != NULL) lock_release (lock);
-      return file_open (inode);
-    }
-  }
-  inode_close (inode);
+      return file_open (inode);  }
   dir_close (dir);
   return NULL;
 
@@ -152,50 +132,14 @@ filesys_open_with_is_dir (const char *name, bool* is_dir)
 bool
 filesys_remove (const char *name) 
 {
-  struct dir* dir = NULL;
+  struct dir* dir;
   bool is_dir;
   char parsed_name[NAME_MAX + 1];
 
-  struct inode* inode = NULL;
-
   bool success = filesys_parse (name, &dir, parsed_name, &is_dir) &&
 			dir != NULL &&
-                        strlen (parsed_name) > 0;
-
-  struct lock* lock = (dir == NULL) ? NULL : inode_dir_lock (dir_get_inode (dir));
-  if (lock != NULL) lock_acquire (lock);
-
-  success = success && dir_lookup (dir, parsed_name, &inode);
-
-  if (success)
-  {
-    if (dir_entry_is_dir (dir, inode_get_inumber (inode)))
-    {
-      struct dir* temp;
-      char dummy[NAME_MAX + 1];
-
-      if (dir_readdir (temp = dir_open (inode), dummy))
-        success = false;
-
-      /* checking whether the victim directory is being used */
-      if (inode_is_used (inode) || thread_on_dir (inode_get_inumber (inode)))
-        success = false;
-
-      dir_close (temp);
-    }
-    else if (is_dir)
-    {
-      success = false;
-    }
-  }
-
-  if (success && !dir_remove (dir, parsed_name))
-    PANIC ("filesys_remove FAIL");
-
-  inode_close (inode);
+			dir_remove (dir, parsed_name);
   dir_close (dir);
-
-  if (lock != NULL) lock_release (lock);
   return success;
 
 /*
@@ -228,12 +172,6 @@ filesys_parse (const char* name_, struct dir** dir, char* dst, bool* is_dir)
   char* name = palloc_get_page (PAL_ASSERT | PAL_ZERO);
   memcpy (name, name_, strlen (name_));
 
-  if (name[0] == '\0')
-  {
-    palloc_free_page (name);
-    return false;
-  }
-
   block_sector_t start = (name_[0] == '/') ? ROOT_DIR_SECTOR : thread_current ()->cur_dir;
   *dir = dir_open (inode_open (inode_get_parent (start)));
   char* dst_ptr = NULL;
@@ -243,17 +181,13 @@ filesys_parse (const char* name_, struct dir** dir, char* dst, bool* is_dir)
   struct dir* temp;
 
   char* token = name;
+  printf("unparsing : %s \n", token);
   char* save_ptr;
   for (token = strtok_r (token, "/", &save_ptr);
 	token != NULL;
 	token = strtok_r (NULL, "/", &save_ptr))
   {
-    if (strlen (token) > NAME_MAX) //filename length limit
-    {
-      success = false;
-      break;
-    }
-
+    printf("parsed : %s \n", token);
     if (!strcmp (token, ".."))
     {
       temp = *dir;
@@ -291,21 +225,10 @@ filesys_parse (const char* name_, struct dir** dir, char* dst, bool* is_dir)
     }
   }
 
-  if (success && dst_ptr != NULL)
-  {
-    memcpy (dst, dst_ptr, NAME_MAX);
-    dst[NAME_MAX] = '\0';
-  }
+  if (success && dst_ptr != NULL) memcpy (dst, dst_ptr, NAME_MAX);
   else if (success) dst[0] = '\0';
   *is_dir = strlen (name_) > 0 && name_[strlen (name_) - 1] == '/';
 
-
-  if (!success)
-  {
-    inode_close (dir_get_inode (*dir));
-    dir_close (*dir);
-    *dir = NULL;
-  }
   palloc_free_page (name);
   return success;
 }

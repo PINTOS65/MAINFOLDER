@@ -27,7 +27,7 @@ static int victim_idx;
 
 static int cache_alloc (block_sector_t);
 static void cache_flush_thread (void*);
-static void cache_aheader_thread (void*);
+static void cache_aheader_thread (void*) UNUSED;
 
 void
 cache_init (void)
@@ -45,8 +45,8 @@ cache_init (void)
   const char* name1 = "cache_flush_thread";
   thread_create (name1, PRI_DEFAULT, cache_flush_thread, NULL);
 
-  const char* name2 = "cache_aheader_thread";
-  thread_create (name2, PRI_DEFAULT, cache_aheader_thread, NULL);
+  //const char* name2 = "cache_aheader_thread";
+  //thread_create (name2, PRI_DEFAULT, cache_aheader_thread, NULL);
 }
 
 void

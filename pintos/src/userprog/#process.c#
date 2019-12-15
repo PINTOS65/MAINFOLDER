@@ -8,6 +8,7 @@
 #include "userprog/gdt.h"
 #include "userprog/pagedir.h"
 #include "userprog/tss.h"
+#include "userprog/syscall.h" //addition
 #include "filesys/directory.h"
 #include "filesys/file.h"
 #include "filesys/filesys.h"
@@ -41,6 +42,7 @@ process_execute (const char *file_name)
   fn_copy = palloc_get_page (0);
   if (fn_copy == NULL)
     return TID_ERROR;
+
   strlcpy (fn_copy, file_name, PGSIZE);
 
   char* fn_copy2 = palloc_get_page (0);
@@ -176,7 +178,8 @@ process_wait (tid_t child_tid)
       break;
     }
   }
-  if (child == NULL) return -1;
+  if (child == N
+      ULL) return -1;
 
   sema_down (&child->wait_sema);
   list_remove (&child->childelem);
@@ -192,11 +195,29 @@ process_exit (void)
   struct thread *cur = thread_current ();
   uint32_t *pd;
 
-  /* closing all the files */
-  for (int i = 0; i < 128; i++)
+#ifdef VM
+  /* unmapping all the mappings */
+  if (cur->map_list != NULL)
   {
-    if (cur->file_list [i] != NULL) file_close (cur->file_list [i]);
-    cur->file_list [i] = NULL;
+    for (int i = 0; i < MAX_MAP_CNT; i++)
+    {
+      if (cur->map_list [i] != NULL)
+        munmap (i);
+    }
+    palloc_free_page (cur->map_list);
+  }
+#endif
+
+  /* closing all the files */
+  if (cur->file_list != NULL)
+  {
+    for (int i = 0; i < MAX_FILE_CNT; i++)
+    {
+      if (cur->file_list [i] != NULL)
+        file_close (cur->file_list [i]);
+      cur->file_list [i] = NULL;
+    }
+    palloc_free_page (cur->file_list);
   }
 
   /* Destroy the current process's page directory and switch back
@@ -214,10 +235,11 @@ process_exit (void)
       cur->pagedir = NULL;
       pagedir_activate (NULL);
       pagedir_destroy (pd);
-#ifdef VM
-      spt_free_process (thread_tid ());
-#endif
     }
+
+#ifdef VM
+  spt_free_process (thread_tid ());
+#endif
 }
 
 /* Sets up the CPU for running user code in the current
@@ -508,35 +530,44 @@ load_segment (struct file *file, off_t ofs, uint8_t *upage,
       size_t page_zero_bytes = PGSIZE - page_read_bytes;
 
 #ifdef VM
+      sema_down (&pf_sema);
       if (page_zero_bytes == PGSIZE)
+      {
         spt_set (upage, NULL, SPTE_ZERO, writable);
+      }
       else if (page_read_bytes == PGSIZE)
       {
         spt_set (upage, file, SPTE_FILE, writable);
         spte_file_seek (upage, file_tell (file));
-        //printf ("vaddr %#x: reading %#x from saved ofs %d\n", (unsigned) upage, (unsigned) file, file_tell (file));
         file_seek (file, file_tell (file) + PGSIZE);
       }
       else
       {
-        uint8_t* kpage = falloc_get_frame (PAL_USER);
+        uint8_t* kpage = falloc_get_frame (0);
         if (kpage == NULL)
+        {
+          sema_up (&pf_sema);
           return false;
+        }
         if (file_read (file, kpage, page_read_bytes) != (int) page_read_bytes)
         {
           falloc_free_frame (kpage);
+          sema_up (&pf_sema);
           return false;
         }
         memset (kpage + page_read_bytes, 0, page_zero_bytes);
         if (!install_page (upage, kpage, writable))
         {
           falloc_free_frame (kpage);
+          sema_up (&pf_sema);
           return false;
         }
+        ft_set (kpage, upage);
+        ft_pin (kpage);
         spt_set (upage, file, SPTE_FILE, writable);
         spte_file_seek (upage, file_tell (file) - page_read_bytes);
-        ft_set (kpage, upage);
       }
+      sema_up (&pf_sema);
 #else
       /* Get a page of memory. */
       uint8_t *kpage = palloc_get_page (PAL_USER);
@@ -576,6 +607,7 @@ setup_stack (void **esp)
   bool success = false;
 
 #ifdef VM
+  sema_down (&pf_sema);
   kpage = falloc_get_frame (PAL_ZERO);
 #else
   kpage = palloc_get_page (PAL_USER | PAL_ZERO);
@@ -588,7 +620,7 @@ setup_stack (void **esp)
         *esp = PHYS_BASE;
 #ifdef VM
         ft_set (kpage, ((uint8_t *) PHYS_BASE) - PGSIZE);
-        spt_set (((uint8_t *) PHYS_BASE) - PGSIZE, kpage, SPTE_MMRY, true);
+        spt_set (((uint8_t *) PHYS_BASE) - PGSIZE, NULL, SPTE_ZERO, true);
 #endif
       }
       else
@@ -598,6 +630,9 @@ setup_stack (void **esp)
         palloc_free_page (kpage);
 #endif
     }
+#ifdef VM
+  sema_up (&pf_sema);
+#endif
   return success;
 }
 

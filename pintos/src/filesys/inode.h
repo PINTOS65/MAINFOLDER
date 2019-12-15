@@ -4,6 +4,7 @@
 #include <stdbool.h>
 #include "filesys/off_t.h"
 #include "devices/block.h"
+#include "threads/synch.h" //addition
 
 struct bitmap;
 
@@ -19,5 +20,11 @@ off_t inode_write_at (struct inode *, const void *, off_t size, off_t offset);
 void inode_deny_write (struct inode *);
 void inode_allow_write (struct inode *);
 off_t inode_length (const struct inode *);
+
+/* addition */
+block_sector_t inode_get_parent (block_sector_t);
+bool inode_set_parent (block_sector_t, block_sector_t);
+bool inode_is_used (struct inode*);
+struct lock* inode_dir_lock (struct inode*);
 
 #endif /* filesys/inode.h */
