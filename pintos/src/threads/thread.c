@@ -827,11 +827,16 @@ thread_fd_set_dir (int fd)
 bool
 thread_on_dir (uint32_t sector)
 {
+  enum intr_level old_level = intr_disable ();
   for (struct list_elem* e = list_front (&all_list); e != list_end (&all_list); e = list_next (e))
   {
     if (list_entry (e, struct thread, allelem)->cur_dir == sector)
+    {
+      intr_set_level (old_level);
       return true;
+    }
   }
+  intr_set_level (old_level);
   return false;
 }
 #endif
