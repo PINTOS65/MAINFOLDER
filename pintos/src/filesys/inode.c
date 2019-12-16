@@ -190,7 +190,7 @@ inode_create (block_sector_t sector, off_t length)
   disk_inode = calloc (1, sizeof *disk_inode);
   if (disk_inode != NULL)
   {
-    disk_inode->length = length;
+    disk_inode->length = 0;
     disk_inode->parent = ROOT_DIR_SECTOR;
     disk_inode->magic = INODE_MAGIC;
 
@@ -214,7 +214,9 @@ inode_create (block_sector_t sector, off_t length)
         cache_write (new_sector, zeros);
         cur_sectors++;
         cur_inodes++;
-        length_left -= length_left < BLOCK_SECTOR_SIZE ? length_left : BLOCK_SECTOR_SIZE;
+        next_length = length_left < BLOCK_SECTOR_SIZE ? length_left : BLOCK_SECTOR_SIZE;
+        length_left -= next_length;
+        disk_inode->length += next_length;
       }
       else if (cur_inodes < DIRECT_SECTOR_CNT + INDIRECT_SECTOR_CNT)
       {
@@ -228,6 +230,7 @@ inode_create (block_sector_t sector, off_t length)
         disk_inode->sector[cur_inodes] = new_sector;
         cur_inodes++;
         length_left -= next_length;
+        disk_inode->length += next_length;
       }
       else
       {
@@ -243,6 +246,7 @@ inode_create (block_sector_t sector, off_t length)
         disk_inode->sector[cur_inodes] = new_sector;
         cur_inodes++;
         length_left -= next_length;
+        disk_inode->length += next_length;
       }
     }
 
@@ -294,7 +298,7 @@ inode_create_indirect (block_sector_t sector, off_t length, size_t* cur_sectorsp
   disk_inode = calloc (1, sizeof *disk_inode);
   if (disk_inode != NULL)
   {
-    disk_inode->length = length;
+    disk_inode->length = 0;
     disk_inode->magic = INODE_MAGIC;
 
     (*cur_sectorsp)++;
@@ -320,6 +324,7 @@ inode_create_indirect (block_sector_t sector, off_t length, size_t* cur_sectorsp
       disk_inode->sector[cur_inodes] = new_sector;
       cur_inodes++;
       length_left -= next_length;
+      disk_inode->length += next_length;
     }
 
     if (success)
@@ -345,7 +350,7 @@ inode_create_direct (block_sector_t sector, off_t length, size_t* cur_sectorsp)
   if (disk_inode != NULL)
   {
     size_t sectors = bytes_to_sectors (length);
-    disk_inode->length = length;
+    disk_inode->length = 0;
     disk_inode->magic = INODE_MAGIC;
 
     (*cur_sectorsp)++;
@@ -364,6 +369,8 @@ inode_create_direct (block_sector_t sector, off_t length, size_t* cur_sectorsp)
       cache_write (new_sector, zeros);
       (*cur_sectorsp)++;
       cur_sectors_data++;
+      disk_inode->length = (unsigned) length < cur_sectors_data * BLOCK_SECTOR_SIZE ?
+				(unsigned) length : cur_sectors_data * BLOCK_SECTOR_SIZE;
     }
 
     if (success)
@@ -854,17 +861,19 @@ inode_write_at (struct inode *inode, const void *buffer_, off_t size,
     return 0;
 
   /* (addition) file growth */
+  bool locked = false;
   lock_acquire (&inode->grow_lock);
   if (offset + size > inode->data.length)
   {
+    locked = true;
     if (!inode_grow (inode, offset + size - inode->data.length))
       PANIC ("FILE GROWTH FAIL: sector %d, length %d, offset %d, size %d", inode->sector, inode->data.length, offset, size);
   }
-  lock_release (&inode->grow_lock);
+  else lock_release (&inode->grow_lock);
 
   while (size > 0) 
     {
-      lock_acquire (&inode->grow_lock);
+      if (!locked) lock_acquire (&inode->grow_lock);
 
       /* Sector to write, starting byte offset within sector. */
       block_sector_t sector_idx = byte_to_sector (inode, offset);
@@ -875,7 +884,7 @@ inode_write_at (struct inode *inode, const void *buffer_, off_t size,
       int sector_left = BLOCK_SECTOR_SIZE - sector_ofs;
       int min_left = inode_left < sector_left ? inode_left : sector_left;
 
-      lock_release (&inode->grow_lock);
+      if (!locked) lock_release (&inode->grow_lock);
 
       /* Number of bytes to actually write into this sector. */
       int chunk_size = size < min_left ? size : min_left;
@@ -919,6 +928,8 @@ inode_write_at (struct inode *inode, const void *buffer_, off_t size,
       bytes_written += chunk_size;
     }
   //free (bounce);
+
+  if (locked) lock_release (&inode->grow_lock);
 
   return bytes_written;
 }
