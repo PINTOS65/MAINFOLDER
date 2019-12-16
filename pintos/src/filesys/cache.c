@@ -117,6 +117,7 @@ cache_write_at (block_sector_t sector, const void* buffer, off_t size, off_t ofs
   if (i == CACHE_SECTOR_CNT)
   {
     int cache_idx = cache_alloc (sector);
+    block_read (fs_device, sector, cache + cache_idx * BLOCK_SECTOR_SIZE);
     memcpy (cache + cache_idx * BLOCK_SECTOR_SIZE + ofs, buffer, size);
     ct[cache_idx].accessed_cnt++;
     ct[cache_idx].dirty_cnt++;
@@ -197,7 +198,7 @@ cache_flush_thread (void* aux UNUSED)
 {
   while (true)
   {
-    timer_sleep (50);
+    timer_sleep (10);
     cache_flush ();
   }
 }

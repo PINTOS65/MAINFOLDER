@@ -50,7 +50,7 @@ static bool isdir (int);
 static int inumber (int);
 #endif
 
-static struct semaphore filesynch;
+//static struct semaphore filesynch;
 static void* valid (void*);
 static void* valid_buf (void*, unsigned);
 static void* valid_str (char*);
@@ -64,7 +64,7 @@ static void* esp;
 void
 syscall_init (void) 
 {
-  sema_init (&filesynch, 1);
+  //sema_init (&filesynch, 1);
   intr_register_int (0x30, 3, INTR_ON, syscall_handler, "syscall");
 }
 
@@ -310,7 +310,7 @@ open (const char* file)
   if (file == NULL)
     return -1;
 
-  sema_down (&filesynch);
+  //sema_down (&filesynch);
 #ifdef FILESYS
   bool is_dir;
   void* fileptr = filesys_open_with_is_dir (file, &is_dir);
@@ -319,7 +319,7 @@ open (const char* file)
 #endif
   if (fileptr == NULL)
   {
-    sema_up (&filesynch);
+    //sema_up (&filesynch);
     return -1;
   }
 #ifdef FILESYS
@@ -337,7 +337,7 @@ open (const char* file)
   if (strcmp (thread_name (), file) == 0) file_deny_write (fileptr);
   int result = thread_push_file (fileptr);
 #endif
-  sema_up (&filesynch);
+  //sema_up (&filesynch);
 
   return result;
 }
@@ -401,10 +401,10 @@ seek (int fd, unsigned position)
   ASSERT (!thread_fd_is_dir (fd));
 #endif
  
-  sema_down (&filesynch);
+  //sema_down (&filesynch);
   struct file* file = thread_get_file (fd);
   file_seek (file, (off_t) position);
-  sema_up (&filesynch);
+  //sema_up (&filesynch);
 }
 
 static unsigned
@@ -417,10 +417,10 @@ tell (int fd)
   ASSERT (!thread_fd_is_dir (fd));
 #endif
  
-  sema_down (&filesynch);
+  //sema_down (&filesynch);
   struct file* file = thread_get_file (fd);
   unsigned result = file_tell (file);
-  sema_up (&filesynch);
+  //sema_up (&filesynch);
 
   return result;
 }
@@ -431,7 +431,7 @@ close (int fd)
   if (fd < 3 || fd >= MAX_FILE_CNT)
     thread_exit ();
 
-  sema_down (&filesynch);
+  //sema_down (&filesynch);
   void* file = thread_remove_file (fd);
   if (file != NULL)
   {
@@ -442,7 +442,7 @@ close (int fd)
     file_close (file);
 #endif
   }
-  sema_up (&filesynch);
+  //sema_up (&filesynch);
 }
 
 #ifdef VM
@@ -520,10 +520,10 @@ munmap (mapid_t mapping)
     {
       if (pagedir_is_dirty (pd, addr + i))
       {
-        sema_down (&filesynch);
+        //sema_down (&filesynch);
         size_t write_bytes = file_write_at (file, kpage, PGSIZE, spte_file_tell (addr + i));
         if (write_bytes == 0) PANIC ("why writing back nothing????");
-        sema_up (&filesynch);
+        //sema_up (&filesynch);
       }
       pagedir_clear_page (pd, addr + i);
       falloc_free_frame (kpage);
@@ -534,9 +534,9 @@ munmap (mapid_t mapping)
       void* temp = malloc (PGSIZE);
       swap_in (spt_get_ref (addr + i), temp);
 
-      sema_down (&filesynch);
+      //sema_down (&filesynch);
       file_write_at (file, temp, PGSIZE, spte_file_tell (addr + i));
-      sema_up (&filesynch);
+      //sema_up (&filesynch);
 
       free (temp);
     }
