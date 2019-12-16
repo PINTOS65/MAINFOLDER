@@ -198,7 +198,7 @@ cache_flush_thread (void* aux UNUSED)
 {
   while (true)
   {
-    timer_sleep (10);
+    timer_sleep (50);
     cache_flush ();
   }
 }

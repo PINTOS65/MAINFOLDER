@@ -192,10 +192,10 @@ filesys_remove (const char *name)
   if (success && !dir_remove (dir, parsed_name))
     PANIC ("filesys_remove FAIL");
 
+  if (lock != NULL) lock_release (lock);
   inode_close (inode);
   dir_close (dir);
 
-  if (lock != NULL) lock_release (lock);
   return success;
 
 /*
